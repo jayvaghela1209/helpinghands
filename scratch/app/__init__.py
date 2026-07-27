@@ -1,0 +1,1 @@
+# HelpingHands Backend Application Package

@@ -4,7 +4,9 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+# pyrefly: ignore [missing-import]
 from sqlalchemy.ext.asyncio import AsyncSession
+# pyrefly: ignore [missing-import]
 from sqlalchemy import text
 from uuid import UUID
 
@@ -77,68 +79,78 @@ def require_role(allowed_roles: list[UserRole]):
 
 @router.post("/signup", response_model=UserResponse)
 async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
-    # 1. Register user with Supabase
-    async with httpx.AsyncClient() as client:
-        if SUPABASE_SERVICE_ROLE_KEY:
-            # Create user via Admin API (email auto-verified)
-            headers = {
-                "apikey": SUPABASE_SERVICE_ROLE_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-                "Content-Type": "application/json"
-            }
-            url = f"{SUPABASE_URL}/auth/v1/admin/users"
-            body = {
-                "email": request.email,
-                "password": request.password,
-                "email_confirm": True,
-                "user_metadata": {
-                    "role": request.role,
-                    "name": request.name
+    import uuid as uuid_mod
+    
+    # Detect if Supabase is actually configured or if we're in local-only mode
+    is_local_mode = (
+        "placeholder" in SUPABASE_ANON_KEY or
+        "placeholder" in SUPABASE_SERVICE_ROLE_KEY or
+        SUPABASE_URL == "http://localhost:54321"
+    )
+    
+    if is_local_mode:
+        # LOCAL MODE: Skip Supabase entirely, generate a UUID locally
+        user_uuid = str(uuid_mod.uuid4())
+    else:
+        # PRODUCTION MODE: Register user with Supabase first
+        async with httpx.AsyncClient() as client:
+            if SUPABASE_SERVICE_ROLE_KEY:
+                headers = {
+                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                    "Content-Type": "application/json"
                 }
-            }
-        else:
-            # Create user via standard API
-            headers = {
-                "apikey": SUPABASE_ANON_KEY,
-                "Content-Type": "application/json"
-            }
-            url = f"{SUPABASE_URL}/auth/v1/signup"
-            body = {
-                "email": request.email,
-                "password": request.password,
-                "data": {
-                    "role": request.role,
-                    "name": request.name
+                url = f"{SUPABASE_URL}/auth/v1/admin/users"
+                body = {
+                    "email": request.email,
+                    "password": request.password,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "role": request.role,
+                        "name": request.name
+                    }
                 }
-            }
-            
-        try:
-            response = await client.post(url, headers=headers, json=body, timeout=10.0)
-            if response.status_code not in (200, 201):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Supabase auth registration failed: {response.text}"
-                )
-            
-            supabase_user = response.json()
-            user_uuid = supabase_user.get("id")
-            if not user_uuid:
-                # In standard signup, it might be nested under 'user' key
-                user_uuid = supabase_user.get("user", {}).get("id")
+            else:
+                headers = {
+                    "apikey": SUPABASE_ANON_KEY,
+                    "Content-Type": "application/json"
+                }
+                url = f"{SUPABASE_URL}/auth/v1/signup"
+                body = {
+                    "email": request.email,
+                    "password": request.password,
+                    "data": {
+                        "role": request.role,
+                        "name": request.name
+                    }
+                }
                 
-            if not user_uuid:
+            try:
+                response = await client.post(url, headers=headers, json=body, timeout=10.0)
+                if response.status_code not in (200, 201):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Supabase auth registration failed: {response.text}"
+                    )
+                
+                supabase_user = response.json()
+                user_uuid = supabase_user.get("id")
+                if not user_uuid:
+                    user_uuid = supabase_user.get("user", {}).get("id")
+                    
+                if not user_uuid:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to extract user ID from Supabase response"
+                    )
+                    
+            except Exception as err:
+                if isinstance(err, HTTPException):
+                    raise err
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to extract user ID from Supabase response"
+                    detail=f"Error connecting to Supabase: {str(err)}"
                 )
-                
-        except Exception as err:
-            if isinstance(err, HTTPException):
-                raise err
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error connecting to Supabase: {str(err)}"
-            )
 
     # 2. Insert into PostgreSQL
     try:
