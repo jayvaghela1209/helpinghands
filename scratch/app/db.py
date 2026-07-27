@@ -8,7 +8,13 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/sahayog")
 
 # Create asynchronous engine
-engine = create_async_engine(DATABASE_URL, echo=False)
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={
+        "statement_cache_size": 0
+    }
+)
 
 # Sessionmaker for async sessions
 async_session = async_sessionmaker(
