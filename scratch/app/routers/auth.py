@@ -157,9 +157,9 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
         async with db.begin():
             # Insert into users table
             user_insert = text("""
-                INSERT INTO users (id, role, name, email, phone, city)
-                VALUES (:id, :role, :name, :email, :phone, :city)
-            """)
+    INSERT INTO users (id, role, name, email, phone, city, created_at)
+    VALUES (:id, :role, :name, :email, :phone, :city, NOW())
+""")
             await db.execute(user_insert, {
                 "id": user_uuid,
                 "role": request.role,
