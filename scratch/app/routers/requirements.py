@@ -15,13 +15,14 @@ router = APIRouter(prefix="/api/requirements", tags=["Requirements"])
 class RequirementCreate(BaseModel):
     title: str = Field(..., max_length=200)
     description: Optional[str] = None
-    category: Optional[str] = Field(None, max_length=50)
+    category: Optional[str] = Field(None, max_length=100)
     skill_tags: List[str] = []
     seats_total: int = Field(..., gt=0)
     event_date: date
-    location_name: Optional[str] = Field(None, max_length=200)
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    location_name: str = Field(..., max_length=255)
+    event_latitude: float
+    event_longitude: float
+    attendance_radius: Optional[float] = 50.0
     is_urgent: bool = False
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -32,13 +33,13 @@ async def create_requirement(
 ):
     try:
         query = text("""
-            INSERT INTO requirements (ngo_id, title, description, category, skill_tags, seats_total, event_date, location_name, latitude, longitude, is_urgent)
-            VALUES (:ngo_id, :title, :description, :category, :skill_tags, :seats_total, :event_date, :location_name, :latitude, :longitude, :is_urgent)
-            RETURNING id, ngo_id, title, description, category, skill_tags, seats_total, seats_filled, event_date, location_name, latitude, longitude, is_urgent, status, created_at
+            INSERT INTO requirements (ngo_profile_id, title, description, category, skill_tags, seats_total, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent)
+            VALUES ((SELECT id FROM ngo_profiles WHERE user_id = :ngo_user_id), :title, :description, :category, :skill_tags, :seats_total, :event_date, :location_name, :event_latitude, :event_longitude, :attendance_radius, :is_urgent)
+            RETURNING id, ngo_profile_id, title, description, category, skill_tags, seats_total, seats_filled, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status, created_at
         """)
         
         result = await db.execute(query, {
-            "ngo_id": current_user["id"],
+            "ngo_user_id": current_user["id"],
             "title": request.title,
             "description": request.description,
             "category": request.category,
@@ -46,8 +47,9 @@ async def create_requirement(
             "seats_total": request.seats_total,
             "event_date": request.event_date,
             "location_name": request.location_name,
-            "latitude": request.latitude,
-            "longitude": request.longitude,
+            "event_latitude": request.event_latitude,
+            "event_longitude": request.event_longitude,
+            "attendance_radius": request.attendance_radius,
             "is_urgent": request.is_urgent
         })
         await db.commit()
@@ -90,8 +92,8 @@ async def list_ngo_requirements(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_role([UserRole.ngo]))
 ):
-    query = text("SELECT * FROM requirements WHERE ngo_id = :ngo_id ORDER BY created_at DESC")
-    result = await db.execute(query, {"ngo_id": current_user["id"]})
+    query = text("SELECT * FROM requirements WHERE ngo_profile_id = (SELECT id FROM ngo_profiles WHERE user_id = :ngo_user_id) ORDER BY created_at DESC")
+    result = await db.execute(query, {"ngo_user_id": current_user["id"]})
     return result.mappings().all()
 
 @router.get("/{id}")

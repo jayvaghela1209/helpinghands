@@ -1,11 +1,5 @@
-import os
-# pyrefly: ignore [missing-import]
+from app.config import DATABASE_URL
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from dotenv import load_dotenv
-
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/sahayog")
 
 # Create asynchronous engine
 engine = create_async_engine(

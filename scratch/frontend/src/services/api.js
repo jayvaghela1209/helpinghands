@@ -1,0 +1,99 @@
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+/**
+ * Common request wrapper
+ */
+async function request(endpoint, options = {}) {
+  const url = `${API_URL}${endpoint}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  const config = {
+    ...options,
+    headers,
+  };
+
+  try {
+    const response = await fetch(url, config);
+    
+    if (response.status === 204) {
+      return null;
+    }
+    
+    const data = await response.json().catch(() => ({}));
+    
+    if (!response.ok) {
+      throw new Error(data.detail || `HTTP Error ${response.status}: ${response.statusText}`);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error(`API service error on ${endpoint}:`, error);
+    throw error;
+  }
+}
+
+export const api = {
+  /**
+   * Health check endpoint
+   */
+  async checkHealth() {
+    return request('/health');
+  },
+
+  /**
+   * Standard GET request
+   */
+  async get(endpoint, token = null) {
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return request(endpoint, { method: 'GET', headers });
+  },
+
+  /**
+   * Standard POST request
+   */
+  async post(endpoint, body, token = null) {
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return request(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * Standard PUT request
+   */
+  async put(endpoint, body, token = null) {
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return request(endpoint, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * Standard DELETE request
+   */
+  async delete(endpoint, token = null) {
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return request(endpoint, { method: 'DELETE', headers });
+  }
+};
+
+export default api;

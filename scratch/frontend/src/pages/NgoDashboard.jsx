@@ -8,9 +8,9 @@ export const NgoDashboard = () => {
 
   return (
     <div className="min-h-screen bg-brand-secondary">
-      <Navbar />
+      {/* <Navbar /> */}
       <main className="max-w-7xl mx-auto px-6 py-8">
-        
+
         {/* Header Section */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-brand-dark">NGO Operations Panel</h1>
@@ -19,7 +19,7 @@ export const NgoDashboard = () => {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          
+
           <div className="bg-white p-6 border border-brand-border rounded-md">
             <div className="flex justify-between items-start">
               <div>
@@ -76,7 +76,7 @@ export const NgoDashboard = () => {
 
         {/* Dashboard Content split */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+
           {/* Main Left: Tasks */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white border border-brand-border rounded-md">

@@ -34,13 +34,13 @@ async def apply_to_requirement(
 
     try:
         query = text("""
-            INSERT INTO applications (requirement_id, volunteer_id, status)
-            VALUES (:requirement_id, :volunteer_id, 'pending')
-            RETURNING id, requirement_id, volunteer_id, status, applied_at
+            INSERT INTO applications (requirement_id, volunteer_profile_id, status)
+            VALUES (:requirement_id, (SELECT id FROM volunteer_profiles WHERE user_id = :volunteer_user_id), 'pending')
+            RETURNING id, requirement_id, volunteer_profile_id, status, applied_at
         """)
         result = await db.execute(query, {
             "requirement_id": id,
-            "volunteer_id": current_user["id"]
+            "volunteer_user_id": current_user["id"]
         })
         await db.commit()
         return result.mappings().first()
@@ -58,17 +58,22 @@ async def list_applicants(
     current_user = Depends(require_role([UserRole.ngo]))
 ):
     # Check if this requirement belongs to the NGO
-    req_query = text("SELECT ngo_id FROM requirements WHERE id = :id")
-    req_res = await db.execute(req_query, {"id": id})
-    req = req_res.mappings().first()
-    if not req or req["ngo_id"] != current_user["id"]:
+    req_query = text("""
+        SELECT r.ngo_profile_id 
+        FROM requirements r
+        JOIN ngo_profiles np ON r.ngo_profile_id = np.id
+        WHERE r.id = :id AND np.user_id = :user_id
+    """)
+    req_res = await db.execute(req_query, {"id": id, "user_id": current_user["id"]})
+    req = req_res.scalar()
+    if not req:
         raise HTTPException(status_code=403, detail="Forbidden: You do not own this requirement posting")
 
     query = text("""
         SELECT a.id, a.status, a.applied_at, u.name, u.email, u.phone, u.city, vp.skill_tags
         FROM applications a
-        JOIN users u ON a.volunteer_id = u.id
-        JOIN volunteer_profiles vp ON u.id = vp.user_id
+        JOIN volunteer_profiles vp ON a.volunteer_profile_id = vp.id
+        JOIN users u ON vp.user_id = u.id
         WHERE a.requirement_id = :requirement_id
         ORDER BY a.applied_at DESC
     """)
@@ -84,9 +89,10 @@ async def decide_application(
 ):
     # Retrieve application detail
     app_query = text("""
-        SELECT a.id, a.requirement_id, a.volunteer_id, a.status, r.ngo_id, r.seats_filled, r.seats_total
+        SELECT a.id, a.requirement_id, a.volunteer_profile_id, a.status, r.ngo_profile_id, r.seats_filled, r.seats_total, np.user_id as ngo_user_id
         FROM applications a
         JOIN requirements r ON a.requirement_id = r.id
+        JOIN ngo_profiles np ON r.ngo_profile_id = np.id
         WHERE a.id = :id
     """)
     app_res = await db.execute(app_query, {"id": id})
@@ -94,7 +100,7 @@ async def decide_application(
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
         
-    if app["ngo_id"] != current_user["id"]:
+    if app["ngo_user_id"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to manage this application")
         
     if app["status"] != "pending":
@@ -141,8 +147,9 @@ async def list_my_applications(
         SELECT a.id, a.status, a.applied_at, r.id as requirement_id, r.title, r.category, r.event_date, r.location_name
         FROM applications a
         JOIN requirements r ON a.requirement_id = r.id
-        WHERE a.volunteer_id = :volunteer_id
+        JOIN volunteer_profiles vp ON a.volunteer_profile_id = vp.id
+        WHERE vp.user_id = :user_id
         ORDER BY a.applied_at DESC
     """)
-    result = await db.execute(query, {"volunteer_id": current_user["id"]})
+    result = await db.execute(query, {"user_id": current_user["id"]})
     return result.mappings().all()

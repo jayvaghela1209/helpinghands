@@ -1,14 +1,9 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional
-from enum import Enum
 from datetime import datetime
 from uuid import UUID
 
-class UserRole(str, Enum):
-    volunteer = "volunteer"
-    ngo = "ngo"
-    corporate = "corporate"
-    admin = "admin"
+from app.config import UserRole
 
 class SignupRequest(BaseModel):
     email: EmailStr
@@ -22,8 +17,8 @@ class SignupRequest(BaseModel):
     skill_tags: Optional[List[str]] = []
     
     # NGO specific fields
-    org_name: Optional[str] = Field(None, max_length=200)
-    registration_no: Optional[str] = Field(None, max_length=100)
+    organization_name: Optional[str] = Field(None, max_length=200)
+    registration_number: Optional[str] = Field(None, max_length=100)
     darpan_id: Optional[str] = Field(None, max_length=100)
     pan_number: Optional[str] = Field(None, max_length=20)
     focus_areas: Optional[List[str]] = []

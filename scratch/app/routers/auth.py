@@ -181,26 +181,28 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
                 })
             elif request.role == UserRole.ngo:
                 profile_insert = text("""
-                    INSERT INTO ngo_profiles (user_id, org_name, registration_no, darpan_id, pan_number, focus_areas)
-                    VALUES (:user_id, :org_name, :registration_no, :darpan_id, :pan_number, :focus_areas)
+                    INSERT INTO ngo_profiles (user_id, organization_name, registration_number, darpan_id, pan_number, focus_areas)
+                    VALUES (:user_id, :organization_name, :registration_number, :darpan_id, :pan_number, :focus_areas)
                 """)
                 await db.execute(profile_insert, {
                     "user_id": user_uuid,
-                    "org_name": request.org_name or request.name,
-                    "registration_no": request.registration_no,
+                    "organization_name": request.organization_name or request.name,
+                    "registration_number": request.registration_number or "",
                     "darpan_id": request.darpan_id,
                     "pan_number": request.pan_number,
                     "focus_areas": request.focus_areas
                 })
             elif request.role == UserRole.corporate:
                 profile_insert = text("""
-                    INSERT INTO corporate_profiles (user_id, company_name, cin_number, csr_focus_areas)
-                    VALUES (:user_id, :company_name, :cin_number, :csr_focus_areas)
+                    INSERT INTO corporate_profiles (user_id, company_name, registration_number, cin_number, pan_number, csr_focus_areas)
+                    VALUES (:user_id, :company_name, :registration_number, :cin_number, :pan_number, :csr_focus_areas)
                 """)
                 await db.execute(profile_insert, {
                     "user_id": user_uuid,
                     "company_name": request.company_name or request.name,
+                    "registration_number": request.registration_number or "",
                     "cin_number": request.cin_number,
+                    "pan_number": request.pan_number,
                     "csr_focus_areas": request.csr_focus_areas
                 })
                 

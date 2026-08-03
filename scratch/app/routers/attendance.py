@@ -40,11 +40,12 @@ async def checkin(
     # Verify the volunteer was accepted for this requirement
     app_query = text("""
         SELECT status FROM applications
-        WHERE requirement_id = :requirement_id AND volunteer_id = :volunteer_id
+        WHERE requirement_id = :requirement_id 
+          AND volunteer_profile_id = (SELECT id FROM volunteer_profiles WHERE user_id = :volunteer_user_id)
     """)
     app_res = await db.execute(app_query, {
         "requirement_id": id,
-        "volunteer_id": current_user["id"]
+        "volunteer_user_id": current_user["id"]
     })
     app = app_res.mappings().first()
     if not app or app["status"] != "accepted":
@@ -54,11 +55,11 @@ async def checkin(
         )
 
     # Fetch requirement location details
-    req_query = text("SELECT latitude, longitude, title FROM requirements WHERE id = :id")
+    req_query = text("SELECT event_latitude, event_longitude, title FROM requirements WHERE id = :id")
     req_res = await db.execute(req_query, {"id": id})
     req = req_res.mappings().first()
     
-    if not req or req["latitude"] is None or req["longitude"] is None:
+    if not req or req["event_latitude"] is None or req["event_longitude"] is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This event does not have valid coordinates for geo-verification"
@@ -66,7 +67,7 @@ async def checkin(
 
     distance = calculate_haversine_distance(
         request.latitude, request.longitude,
-        float(req["latitude"]), float(req["longitude"])
+        float(req["event_latitude"]), float(req["event_longitude"])
     )
     
     # 200 meters geo-fence limit
@@ -87,19 +88,18 @@ async def checkin(
         async with db.begin():
             # 1. Insert attendance record
             attendance_insert = text("""
-                INSERT INTO attendance (requirement_id, volunteer_id, present, checkin_latitude, checkin_longitude, distance_meters, checked_in_at)
-                VALUES (:requirement_id, :volunteer_id, :present, :checkin_lat, :checkin_lon, :distance, :checked_in_at)
-                ON CONFLICT (requirement_id, volunteer_id) DO UPDATE 
-                SET present = true, checkin_latitude = :checkin_lat, checkin_longitude = :checkin_lon, distance_meters = :distance, checked_in_at = :checked_in_at
+                INSERT INTO attendance (requirement_id, volunteer_profile_id, status, checkin_latitude, checkin_longitude, checkin_distance_meters, checkin_time)
+                VALUES (:requirement_id, (SELECT id FROM volunteer_profiles WHERE user_id = :volunteer_user_id), 'checked_in', :checkin_lat, :checkin_lon, :distance, :checkin_time)
+                ON CONFLICT (requirement_id, volunteer_profile_id) DO UPDATE 
+                SET status = 'checked_in', checkin_latitude = :checkin_lat, checkin_longitude = :checkin_lon, checkin_distance_meters = :distance, checkin_time = :checkin_time
             """)
             await db.execute(attendance_insert, {
                 "requirement_id": id,
-                "volunteer_id": current_user["id"],
-                "present": True,
+                "volunteer_user_id": current_user["id"],
                 "checkin_lat": request.latitude,
                 "checkin_lon": request.longitude,
                 "distance": distance,
-                "checked_in_at": datetime.now(timezone.utc)
+                "checkin_time": datetime.now(timezone.utc)
             })
 
             # 2. Reward the volunteer profile
@@ -118,15 +118,15 @@ async def checkin(
 
             # 3. Add to credits audit log
             log_insert = text("""
-                INSERT INTO credits_log (volunteer_id, requirement_id, points_change, hours_change, reason)
-                VALUES (:volunteer_id, :requirement_id, :points_change, :hours_change, :reason)
+                INSERT INTO credits_log (volunteer_profile_id, requirement_id, points_change, hours_change, reason, remarks)
+                VALUES ((SELECT id FROM volunteer_profiles WHERE user_id = :volunteer_user_id), :requirement_id, :points_change, :hours_change, 'attendance', :remarks)
             """)
             await db.execute(log_insert, {
-                "volunteer_id": current_user["id"],
+                "volunteer_user_id": current_user["id"],
                 "requirement_id": id,
                 "points_change": POINTS_EARNED,
                 "hours_change": HOURS_EARNED,
-                "reason": f"Checked in at {req['title']}"
+                "remarks": f"Checked in at {req['title']}"
             })
             
         return {
@@ -149,18 +149,24 @@ async def get_attendance(
     current_user = Depends(require_role([UserRole.ngo]))
 ):
     # Verify ownership
-    req_query = text("SELECT ngo_id FROM requirements WHERE id = :id")
-    req_res = await db.execute(req_query, {"id": id})
-    req = req_res.mappings().first()
-    if not req or req["ngo_id"] != current_user["id"]:
+    req_query = text("""
+        SELECT r.ngo_profile_id 
+        FROM requirements r
+        JOIN ngo_profiles np ON r.ngo_profile_id = np.id
+        WHERE r.id = :id AND np.user_id = :user_id
+    """)
+    req_res = await db.execute(req_query, {"id": id, "user_id": current_user["id"]})
+    req = req_res.scalar()
+    if not req:
         raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to view this data")
 
     query = text("""
-        SELECT att.id, att.present, att.checked_in_at, att.distance_meters, u.name, u.email
+        SELECT att.id, att.status, att.checkin_time, att.checkin_distance_meters, u.name, u.email
         FROM attendance att
-        JOIN users u ON att.volunteer_id = u.id
+        JOIN volunteer_profiles vp ON att.volunteer_profile_id = vp.id
+        JOIN users u ON vp.user_id = u.id
         WHERE att.requirement_id = :requirement_id
-        ORDER BY att.checked_in_at DESC
+        ORDER BY att.checkin_time DESC
     """)
     result = await db.execute(query, {"requirement_id": id})
     return result.mappings().all()
@@ -172,9 +178,10 @@ async def verify_attendance(
     current_user = Depends(require_role([UserRole.ngo]))
 ):
     att_query = text("""
-        SELECT a.id, a.volunteer_id, a.requirement_id, a.present, r.ngo_id
+        SELECT a.id, a.volunteer_profile_id, a.requirement_id, a.status, r.ngo_profile_id, np.user_id as ngo_user_id
         FROM attendance a
         JOIN requirements r ON a.requirement_id = r.id
+        JOIN ngo_profiles np ON r.ngo_profile_id = np.id
         WHERE a.id = :id
     """)
     att_res = await db.execute(att_query, {"id": id})
@@ -183,19 +190,18 @@ async def verify_attendance(
     if not att:
         raise HTTPException(status_code=404, detail="Attendance record not found")
         
-    if att["ngo_id"] != current_user["id"]:
+    if att["ngo_user_id"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to verify this attendance record")
 
     try:
         async with db.begin():
             query = text("""
                 UPDATE attendance
-                SET present = true, marked_by = :marked_by
+                SET status = 'verified'
                 WHERE id = :id
             """)
             await db.execute(query, {
-                "id": id,
-                "marked_by": current_user["id"]
+                "id": id
             })
             
             # Since they are manually marked present, we reward them as well
@@ -206,24 +212,24 @@ async def verify_attendance(
                 UPDATE volunteer_profiles
                 SET total_hours = total_hours + :hours,
                     credit_points = credit_points + :points
-                WHERE user_id = :user_id
+                WHERE id = :volunteer_profile_id
             """)
             await db.execute(profile_update, {
                 "hours": HOURS_EARNED,
                 "points": POINTS_EARNED,
-                "user_id": att["volunteer_id"]
+                "volunteer_profile_id": att["volunteer_profile_id"]
             })
 
             log_insert = text("""
-                INSERT INTO credits_log (volunteer_id, requirement_id, points_change, hours_change, reason)
-                VALUES (:volunteer_id, :requirement_id, :points_change, :hours_change, :reason)
+                INSERT INTO credits_log (volunteer_profile_id, requirement_id, points_change, hours_change, reason, remarks)
+                VALUES (:volunteer_profile_id, :requirement_id, :points_change, :hours_change, 'attendance', :remarks)
             """)
             await db.execute(log_insert, {
-                "volunteer_id": att["volunteer_id"],
+                "volunteer_profile_id": att["volunteer_profile_id"],
                 "requirement_id": att["requirement_id"],
                 "points_change": POINTS_EARNED,
                 "hours_change": HOURS_EARNED,
-                "reason": "Manual attendance override"
+                "remarks": "Manual attendance override"
             })
             
         return {"status": "success", "message": "Attendance record marked as present & rewarded"}
