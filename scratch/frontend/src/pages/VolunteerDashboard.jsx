@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 import { useAuth } from '../context/AuthContext';
 import { Award, Clock, Star, Activity } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 
 export const VolunteerDashboard = () => {
@@ -9,6 +10,8 @@ export const VolunteerDashboard = () => {
   const [volProfile, setVolProfile] = useState(null);
   const [form, setForm] = useState({ name: '', phone: '', city: '', skill_tags: '' });
   const [message, setMessage] = useState('');
+  const [applications, setApplications] = useState([]);
+  const [appliedRequirementIds, setAppliedRequirementIds] = useState(new Set());
 
   useEffect(() => {
     // Fetch volunteer profile from backend
@@ -27,7 +30,38 @@ export const VolunteerDashboard = () => {
         console.error('Failed to load volunteer profile', err);
       }
     };
+
+    const fetchMyApplications = async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const token = localStorage.getItem('authToken');
+
+        const response = await fetch(`${apiUrl}/api/volunteers/applications`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          // Fetch requirement details for each application
+          const enriched = await Promise.all(data.map(async (app) => {
+            try {
+              const reqRes = await fetch(`${apiUrl}/api/requirements/${app.requirement_id}`);
+              const reqData = await reqRes.json();
+              return { ...app, requirement: reqData };
+            } catch (e) {
+              return app;
+            }
+          }));
+          setApplications(enriched);
+          const ids = new Set(data.map(app => String(app.requirement_id)));
+          setAppliedRequirementIds(ids);
+        }
+      } catch (err) {
+        console.error('Error fetching applications status:', err);
+      }
+    };
+
     fetchProfile();
+    fetchMyApplications();
   }, []);
 
   const handleChange = (e) => {
@@ -143,14 +177,29 @@ export const VolunteerDashboard = () => {
             <div className="bg-white border border-brand-border rounded-md">
               <div className="px-6 py-4 border-b border-brand-border flex justify-between items-center">
                 <h2 className="text-sm font-bold text-brand-dark uppercase">My Applications</h2>
-                <span className="text-xs text-gray-400 font-mono">0 Total</span>
+                <div className="flex items-center space-x-3">
+                  <span className="text-xs text-gray-400 font-mono">{applications?.length ?? 0} Total</span>
+                  <Link to="/browse-opportunities" className="text-xs font-semibold text-white bg-brand-primary hover:bg-opacity-90 px-3 py-1 rounded-md transition-all">Browse Opportunities</Link>
+                </div>
               </div>
-              <div className="p-8 text-center">
-                <p className="text-sm text-gray-500">You haven't applied to any volunteering events yet.</p>
-                <button className="mt-4 text-xs font-semibold text-white bg-brand-primary hover:bg-opacity-90 px-4 py-2 rounded-md transition-all">
-                  Browse Opportunities
-                </button>
-              </div>
+              {applications && applications.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-sm text-gray-500">You haven't applied to any volunteering events yet.</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-brand-border">
+                  {applications && applications.map(app => (
+                    <li key={app.id} className="p-4 flex justify-between items-center">
+                      <div className="text-sm font-medium text-brand-dark">
+                        {app.requirement?.title || `Requirement #${app.requirement_id}`}
+                      </div>
+                      <div className="text-xs text-gray-500 capitalize px-2 py-1 bg-gray-100 rounded">
+                        {app.status}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 

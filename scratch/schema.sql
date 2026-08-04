@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS corporate_profiles (
     CONSTRAINT fk_corporate_user
         FOREIGN KEY (user_id)
         REFERENCES users(id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE   
 );
 
 COMMENT ON TABLE corporate_profiles IS

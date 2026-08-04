@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import Navbar from '../components/Navbar';
+
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
+import { UserCheck, UserX, Calendar, MapPin, Users, Flame, CheckCircle, AlertCircle, Search } from 'lucide-react';
 
-export const BrowseOpportunities = () => {
+const BrowseOpportunities = () => {
   const { user } = useAuth();
   
   const [opportunities, setOpportunities] = useState([]);
@@ -23,12 +24,16 @@ export const BrowseOpportunities = () => {
     setErrorMsg('');
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/api/requirements`);
-      if (!response.ok) throw new Error('Failed to load opportunities');
-      
+      const response = await fetch(`${apiUrl}/api/requirements?ts=${Date.now()}`);
+      if (!response.ok) throw new Error(`Failed to load opportunities (status ${response.status})`);
+
       const data = await response.json();
-      setOpportunities(data);
+      console.log('Fetched opportunities response:', data);
+      // Backend may return array directly or an object containing an array
+      const opportunitiesArray = Array.isArray(data) ? data : (data.requirements || []);
+      setOpportunities(opportunitiesArray);
     } catch (err) {
+      console.error('Error fetching opportunities:', err);
       setErrorMsg(err.message);
     } finally {
       setLoading(false);
@@ -81,11 +86,11 @@ export const BrowseOpportunities = () => {
       }
 
       setActionSuccessMsg('Applied successfully! NGO will review your application.');
-      setAppliedRequirementIds(prev => new Set([...prev, reqId]));
+      await fetchMyApplications();
       
       // Update local state seat count
       setOpportunities(prev =>
-        prev.map(opp => opp.id === reqId ? { ...opp, seats_filled: opp.seats_filled } : opp)
+        prev.map(opp => opp.id === reqId ? { ...opp, seats_filled: opp.seats_filled + 1 } : opp)
       );
 
     } catch (err) {
@@ -95,20 +100,21 @@ export const BrowseOpportunities = () => {
     }
   };
 
-  // Filter logic
+  // Filter logic: Only requirements with status === 'open' are shown
   const filtered = opportunities.filter(opp => {
+    const isOpen = opp.status === 'open';
     const matchesSearch = 
       opp.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
       (opp.location_name && opp.location_name.toLowerCase().includes(searchQuery.toLowerCase()));
     
     const matchesCategory = selectedCategory === 'All' || opp.category === selectedCategory;
 
-    return matchesSearch && matchesCategory;
+    return isOpen && matchesSearch && matchesCategory;
   });
 
   return (
     <div className="min-h-screen bg-brand-secondary">
-      <Navbar />
+
       <main className="max-w-7xl mx-auto px-6 py-8">
         
         {/* Header */}

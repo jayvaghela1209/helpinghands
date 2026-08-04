@@ -121,31 +121,34 @@ async def decide_application(
         raise HTTPException(status_code=400, detail="This application has already been decided")
 
     try:
-        async with db.begin():
-            # Update application status
-            update_app = text("""
+        # Update application status
+        update_app = text(
+            """
                 UPDATE applications
                 SET status = :status, decided_at = :decided_at
                 WHERE id = :id
-            """)
-            await db.execute(update_app, {
-                "id": id,
-                "status": request.status,
-                "decided_at": datetime.now(timezone.utc)
-            })
+            """
+        )
+        await db.execute(update_app, {
+            "id": id,
+            "status": request.status,
+            "decided_at": datetime.now(timezone.utc)
+        })
 
-            # If accepted, update requirements table
-            if request.status == "accepted":
-                if app["seats_filled"] >= app["seats_total"]:
-                    raise HTTPException(status_code=400, detail="Capacity limit reached. Cannot accept more volunteers.")
-                    
-                update_req = text("""
+        # If accepted, update requirements table
+        if request.status == "accepted":
+            if app["seats_filled"] >= app["seats_total"]:
+                raise HTTPException(status_code=400, detail="Capacity limit reached. Cannot accept more volunteers.")
+            update_req = text(
+                """
                     UPDATE requirements
                     SET seats_filled = seats_filled + 1
                     WHERE id = :requirement_id
-                """)
-                await db.execute(update_req, {"requirement_id": app["requirement_id"]})
-                
+                """
+            )
+            await db.execute(update_req, {"requirement_id": app["requirement_id"]})
+
+        await db.commit()
         return {"status": "success", "message": f"Application status set to {request.status}"}
     except Exception as e:
         if isinstance(e, HTTPException):

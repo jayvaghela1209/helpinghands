@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
 import { UserCheck, UserX, CheckCircle, AlertCircle, MapPin, Clock } from 'lucide-react';
 
 export const VerifyAttendance = () => {
@@ -119,7 +118,6 @@ export const VerifyAttendance = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-brand-secondary">
-        <Navbar />
         <div className="text-center py-24">
           <div className="animate-spin rounded-md h-8 w-8 border-2 border-brand-primary border-t-transparent mx-auto"></div>
           <p className="text-xs text-gray-500 mt-4">Loading operational details...</p>
@@ -130,7 +128,6 @@ export const VerifyAttendance = () => {
 
   return (
     <div className="min-h-screen bg-brand-secondary">
-      <Navbar />
       <main className="max-w-7xl mx-auto px-6 py-8">
         
         {/* Header */}

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { Briefcase, MapPin, AlertCircle, CheckCircle } from 'lucide-react';
 
@@ -51,8 +50,8 @@ export const PostRequirement = () => {
       seats_total: parseInt(seatsTotal, 10),
       event_date: eventDate,
       location_name: locationName || null,
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
+      event_latitude: parseFloat(latitude),
+      event_longitude: parseFloat(longitude),
       is_urgent: isUrgent
     };
 
@@ -89,7 +88,6 @@ export const PostRequirement = () => {
 
   return (
     <div className="min-h-screen bg-brand-secondary">
-      <Navbar />
       <main className="max-w-3xl mx-auto px-6 py-8">
         
         <div className="mb-8">
