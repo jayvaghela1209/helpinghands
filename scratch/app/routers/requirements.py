@@ -65,25 +65,39 @@ async def create_requirement(
 async def list_requirements(
     category: Optional[str] = None,
     skill: Optional[str] = None,
+    event_date: Optional[date] = None,
+    location_name: Optional[str] = None,
     is_urgent: Optional[bool] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    conditions = ["status = 'open'"]
+    # Base condition: only open requirements
+    conditions = ["requirements.status = 'open'"]
     params = {}
-    
+
     if category:
-        conditions.append("category = :category")
+        conditions.append("requirements.category = :category")
         params["category"] = category
     if skill:
-        conditions.append(":skill = ANY(skill_tags)")
+        conditions.append(":skill = ANY(requirements.skill_tags)")
         params["skill"] = skill
+    if event_date:
+        conditions.append("requirements.event_date = :event_date")
+        params["event_date"] = event_date
+    if location_name:
+        conditions.append("requirements.location_name ILIKE :location_name")
+        params["location_name"] = f"%{location_name}%"
     if is_urgent is not None:
-        conditions.append("is_urgent = :is_urgent")
+        conditions.append("requirements.is_urgent = :is_urgent")
         params["is_urgent"] = is_urgent
-        
+
     where_clause = " AND ".join(conditions)
-    query_str = f"SELECT * FROM requirements WHERE {where_clause} ORDER BY created_at DESC"
-    
+    query_str = f"""
+        SELECT requirements.*, ngo_profiles.organization_name
+        FROM requirements
+        JOIN ngo_profiles ON requirements.ngo_profile_id = ngo_profiles.id
+        WHERE {where_clause}
+        ORDER BY requirements.created_at DESC
+    """
     result = await db.execute(text(query_str), params)
     return result.mappings().all()
 
@@ -96,12 +110,19 @@ async def list_ngo_requirements(
     result = await db.execute(query, {"ngo_user_id": current_user["id"]})
     return result.mappings().all()
 
-@router.get("/{id}")
-async def get_requirement(
+@router.get("/{id}/details")
+async def get_requirement_details(
     id: UUID,
     db: AsyncSession = Depends(get_db)
 ):
-    query = text("SELECT * FROM requirements WHERE id = :id")
+    # Fetch requirement with organization name and average NGO rating
+    query = text("""
+        SELECT r.*, ngo_profiles.organization_name,
+               (SELECT AVG(rating) FROM ngo_reviews WHERE ngo_profile_id = r.ngo_profile_id) AS avg_rating
+        FROM requirements r
+        JOIN ngo_profiles ON r.ngo_profile_id = ngo_profiles.id
+        WHERE r.id = :id
+    """)
     result = await db.execute(query, {"id": id})
     req = result.mappings().first()
     if not req:

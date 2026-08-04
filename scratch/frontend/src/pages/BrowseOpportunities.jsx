@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
-import { Search, MapPin, Calendar, Users, AlertCircle, CheckCircle, Flame } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export const BrowseOpportunities = () => {
   const { user } = useAuth();
@@ -191,7 +191,9 @@ export const BrowseOpportunities = () => {
                     <span className="inline-block text-[10px] font-bold text-brand-primary bg-brand-secondary border border-brand-border px-2 py-0.5 rounded-sm uppercase tracking-wider mb-3">
                       {opp.category}
                     </span>
-                    <h3 className="font-bold text-brand-dark text-base line-clamp-1 mb-2 pr-12">{opp.title}</h3>
+                      <h3 className="font-bold text-brand-dark text-base line-clamp-1 mb-2 pr-12">
+                        <Link to={`/requirement/${opp.id}`} className="hover:underline">{opp.title}</Link>
+                      </h3>
                     <p className="text-xs text-gray-500 line-clamp-3 mb-6">{opp.description}</p>
                   </div>
 

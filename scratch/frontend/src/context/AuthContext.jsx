@@ -19,8 +19,10 @@ export const AuthProvider = ({ children }) => {
       });
       if (response.ok) {
         const data = await response.json();
-        setProfile(data);
-        return data;
+      setProfile(data);
+      // Save JWT token for API calls
+      localStorage.setItem('authToken', token);
+      return data;
       } else {
         console.error('Failed to fetch user database profile:', await response.text());
         setProfile(null);
