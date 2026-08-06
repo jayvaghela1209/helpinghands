@@ -121,3 +121,32 @@ async def create_or_update_ngo_profile(
             status_code=400,
             detail=f"Failed to save NGO profile: {str(e)}"
         )
+
+@router.get("/pledges")
+async def get_received_pledges(
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_role([UserRole.ngo]))
+):
+    # Fetch the NGO profile ID for the logged-in user
+    ngo_query = text("SELECT id FROM ngo_profiles WHERE user_id = :user_id")
+    ngo_res = await db.execute(ngo_query, {"user_id": current_user["id"]})
+    ngo_row = ngo_res.mappings().first()
+    if not ngo_row:
+        return []
+
+    ngo_profile_id = ngo_row["id"]
+
+    # Query CSR pledges with corporate company name and optional requirement title
+    pledges_query = text("""
+        SELECT p.id, p.pledged_amount, p.pledged_hours, p.status, p.created_at,
+               cp.company_name as corporate_name,
+               req.title as requirement_title
+        FROM csr_pledges p
+        JOIN corporate_profiles cp ON p.corporate_profile_id = cp.id
+        LEFT JOIN requirements req ON p.requirement_id = req.id
+        WHERE p.ngo_profile_id = :ngo_profile_id
+        ORDER BY p.created_at DESC
+    """)
+    pledges_res = await db.execute(pledges_query, {"ngo_profile_id": ngo_profile_id})
+    return pledges_res.mappings().all()
+

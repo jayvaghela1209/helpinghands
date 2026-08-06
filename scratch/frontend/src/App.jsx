@@ -18,7 +18,10 @@ import NgoOnboarding from './pages/NgoOnboarding';
 import ReviewApplicants from './pages/ReviewApplicants';
 import BrowseOpportunities from './pages/BrowseOpportunities.jsx';
 import CorporateDashboard from './pages/CorporateDashboard';
+import BrowseNgos from './pages/BrowseNgos';
 import AttendanceView from './pages/AttendanceView';
+import CSRFunding from './pages/CSRFunding';
+import RequirementSponsorship from './pages/RequirementSponsorship';
 import AdminDashboard from './pages/AdminDashboard';
 
 function App() {
@@ -55,6 +58,9 @@ function App() {
             {/* Protected Corporate Routes */}
             <Route element={<ProtectedRoute allowedRoles={['corporate']} />}>
               <Route path="/corporate-dashboard" element={<CorporateDashboard />} />
+              <Route path="/csr-funding" element={<CSRFunding />} />
+              <Route path="/sponsor-requirement" element={<RequirementSponsorship />} />
+              <Route path="/browse-ngos" element={<BrowseNgos />} />
             </Route>
             
             {/* Protected Admin Routes */}

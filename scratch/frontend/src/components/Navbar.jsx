@@ -53,6 +53,8 @@ export const Navbar = () => {
               <>
                 <Link to="/corporate-dashboard" className="text-brand-primary hover:text-brand-accent transition-colors">Corporate Dashboard</Link>
                 <span className="text-brand-border">|</span>
+                <Link to="/browse-ngos" className="text-brand-primary hover:text-brand-accent transition-colors">Browse NGOs</Link>
+                <span className="text-brand-border">|</span>
                 <span className="text-gray-400 cursor-not-allowed">CSR Claims</span>
                 <span className="text-gray-400 cursor-not-allowed">Pledges</span>
               </>

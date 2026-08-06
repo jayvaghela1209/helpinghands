@@ -271,3 +271,21 @@ async def edit_requirement(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to update requirement: {str(e)}")
+
+@router.get("/{id}")
+async def get_requirement_by_id(
+    id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    query = text("""
+        SELECT r.*, np.organization_name as ngo_name
+        FROM requirements r
+        JOIN ngo_profiles np ON r.ngo_profile_id = np.id
+        WHERE r.id = :id
+    """)
+    res = await db.execute(query, {"id": id})
+    req = res.mappings().first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    return req
+

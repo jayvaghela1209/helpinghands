@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Briefcase, Users, Star, ClipboardList, Plus, MapPin, Calendar, Edit, Building2 } from 'lucide-react';
+import { Briefcase, Users, Star, ClipboardList, Plus, MapPin, Calendar, Edit, Building2, DollarSign } from 'lucide-react';
 
 export const NgoDashboard = () => {
   const { profile } = useAuth();
@@ -9,8 +9,21 @@ export const NgoDashboard = () => {
 
   const [requirements, setRequirements] = useState([]);
   const [ngoProfile, setNgoProfile] = useState(null);
+  const [csrPledges, setCsrPledges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Helper to get auth token
+  const getToken = () => {
+    const directToken = localStorage.getItem('authToken');
+    if (directToken) return directToken;
+    try {
+      const session = JSON.parse(localStorage.getItem('hh_session'));
+      return session?.access_token || '';
+    } catch (e) {
+      return '';
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -18,13 +31,14 @@ export const NgoDashboard = () => {
       setError('');
       try {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-        const token = JSON.parse(localStorage.getItem('hh_session'))?.access_token;
+        const token = getToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        // Fetch requirements and NGO profile in parallel
-        const [reqRes, profRes] = await Promise.all([
+        // Fetch requirements, NGO profile, and received CSR pledges in parallel
+        const [reqRes, profRes, pledgeRes] = await Promise.all([
           fetch(`${apiUrl}/api/requirements/ngo`, { headers }),
-          fetch(`${apiUrl}/api/ngo/profile`, { headers })
+          fetch(`${apiUrl}/api/ngo/profile`, { headers }),
+          fetch(`${apiUrl}/api/ngo/pledges`, { headers }),
         ]);
 
         if (!reqRes.ok) {
@@ -36,6 +50,11 @@ export const NgoDashboard = () => {
         if (profRes.ok) {
           const profData = await profRes.json();
           setNgoProfile(profData);
+        }
+
+        if (pledgeRes.ok) {
+          const pledgeData = await pledgeRes.json();
+          setCsrPledges(pledgeData);
         }
 
       } catch (err) {
@@ -50,6 +69,10 @@ export const NgoDashboard = () => {
 
   const activeNeedsCount = requirements.filter(r => r.status === 'open').length;
   const totalFilledSeats = requirements.reduce((acc, r) => acc + (r.seats_filled || 0), 0);
+
+  // CSR Pledges Summary Calculations
+  const totalPledgesCount = csrPledges.length;
+  const totalPledgedAmount = csrPledges.reduce((sum, p) => sum + (parseFloat(p.pledged_amount) || 0), 0);
 
   const orgName = ngoProfile?.has_profile ? ngoProfile.organization_name : (profile?.name || 'NGO Partner');
   const verificationStatus = ngoProfile?.has_profile ? ngoProfile.verification_status : 'pending';
@@ -90,7 +113,23 @@ export const NgoDashboard = () => {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+
+          {/* CSR Pledges Summary Card */}
+          <div className="bg-white p-6 border border-brand-border rounded-md">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase">CSR Pledges</p>
+                <p className="text-2xl font-bold text-brand-dark mt-2">{totalPledgesCount} {totalPledgesCount === 1 ? 'Pledge' : 'Pledges'}</p>
+              </div>
+              <div className="p-2 bg-brand-secondary border border-brand-border rounded-md">
+                <DollarSign className="w-5 h-5 text-brand-primary" />
+              </div>
+            </div>
+            <p className="text-xs text-brand-success font-bold mt-4">
+              ₹{totalPledgedAmount.toLocaleString('en-IN')}
+            </p>
+          </div>
 
           <div className="bg-white p-6 border border-brand-border rounded-md">
             <div className="flex justify-between items-start">
@@ -149,8 +188,10 @@ export const NgoDashboard = () => {
         {/* Content Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-          {/* Main Left: Requirements List */}
+          {/* Main Left: Requirements List & CSR Pledges Received */}
           <div className="lg:col-span-2 space-y-6">
+            
+            {/* Requirements List */}
             <div className="bg-white border border-brand-border rounded-md">
               <div className="px-6 py-4 border-b border-brand-border flex justify-between items-center">
                 <h2 className="text-sm font-bold text-brand-dark uppercase">Requirements List</h2>
@@ -217,6 +258,51 @@ export const NgoDashboard = () => {
                 </div>
               )}
             </div>
+
+            {/* CSR Pledges Received Section */}
+            <div className="bg-white border border-brand-border rounded-md">
+              <div className="px-6 py-4 border-b border-brand-border flex justify-between items-center">
+                <h2 className="text-sm font-bold text-brand-dark uppercase">CSR Pledges Received</h2>
+                <span className="text-xs text-gray-400 font-mono">{csrPledges.length} Pledges</span>
+              </div>
+
+              {loading ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-md h-6 w-6 border-2 border-brand-primary border-t-transparent mx-auto"></div>
+                  <p className="text-xs text-gray-400 mt-2">Loading CSR pledges...</p>
+                </div>
+              ) : csrPledges.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-xs text-gray-500">No CSR pledges received yet.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-brand-border">
+                  {csrPledges.map((pledge) => (
+                    <div key={pledge.id} className="p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-3 sm:space-y-0">
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-bold text-brand-dark">{pledge.corporate_name || 'Corporate Partner'}</h3>
+                        {pledge.requirement_title && (
+                          <p className="text-xs font-medium text-gray-700">
+                            <span className="font-semibold text-gray-500">Requirement:</span> {pledge.requirement_title}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 pt-0.5">
+                          <span className="font-bold text-green-700">₹{Number(pledge.pledged_amount).toLocaleString('en-IN')}</span>
+                          <span>{pledge.pledged_hours || 0} Volunteer Hours</span>
+                          <span className="text-[11px] text-gray-400 font-mono">
+                            {new Date(pledge.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded border bg-amber-50 text-amber-700 border-amber-200 capitalize self-start sm:self-auto">
+                        {pledge.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
           </div>
 
           {/* Sidebar Right: NGO Details */}
@@ -281,3 +367,4 @@ export const NgoDashboard = () => {
   );
 };
 export default NgoDashboard;
+
