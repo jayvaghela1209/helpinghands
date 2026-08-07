@@ -135,13 +135,13 @@ export const NgoDashboard = () => {
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase">Trust Rating</p>
-                <p className="text-2xl font-bold text-brand-dark mt-2">4.8 / 5.0</p>
+                <p className="text-2xl font-bold text-brand-dark mt-2">No ratings yet</p>
               </div>
               <div className="p-2 bg-brand-secondary border border-brand-border rounded-md">
-                <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                <Star className="w-5 h-5 text-yellow-500" />
               </div>
             </div>
-            <p className="text-xs text-gray-400 mt-4">Based on volunteer feedback</p>
+            <p className="text-xs text-gray-400 mt-4">Ratings appear after verified events</p>
           </div>
 
         </div>
@@ -183,11 +183,10 @@ export const NgoDashboard = () => {
                       <div className="space-y-1.5">
                         <div className="flex items-center space-x-2">
                           <h3 className="text-sm font-bold text-brand-dark">{req.title}</h3>
-                          <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-sm ${
-                            req.status === 'open' 
-                              ? 'bg-green-50 border-brand-success text-brand-success' 
+                          <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-sm ${req.status === 'open'
+                              ? 'bg-green-50 border-brand-success text-brand-success'
                               : 'bg-gray-50 border-gray-300 text-gray-500'
-                          }`}>
+                            }`}>
                             {req.status}
                           </span>
                         </div>
@@ -262,11 +261,10 @@ export const NgoDashboard = () => {
 
                 <div>
                   <span className="text-gray-400 block uppercase font-semibold">Verification Status</span>
-                  <span className={`inline-block mt-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-md ${
-                    verificationStatus === 'approved' || verificationStatus === 'verified'
+                  <span className={`inline-block mt-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-md ${verificationStatus === 'approved' || verificationStatus === 'verified'
                       ? 'border-brand-success text-brand-success bg-green-50'
                       : 'border-yellow-500 text-yellow-600 bg-yellow-50'
-                  }`}>
+                    }`}>
                     {verificationStatus}
                   </span>
                 </div>

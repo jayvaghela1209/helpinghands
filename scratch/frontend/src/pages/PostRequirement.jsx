@@ -1,7 +1,126 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Briefcase, MapPin, AlertCircle, CheckCircle } from 'lucide-react';
+import { MapPin, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+
+// Geoapify Autocomplete — self-contained, no external SDK needed
+const GeoapifyAutocomplete = ({ value, onChange, onSuggestionSelect }) => {
+  const [suggestions, setSuggestions] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [noResults, setNoResults] = useState(false);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef(null);
+  const containerRef = useRef(null);
+  const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const fetchSuggestions = useCallback(async (text) => {
+    if (!text.trim() || text.trim().length < 3) {
+      setSuggestions([]);
+      setNoResults(false);
+      setOpen(false);
+      return;
+    }
+
+    setSearching(true);
+    setNoResults(false);
+
+    try {
+      const url = `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(text)}&limit=5&format=json&apiKey=${apiKey}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const results = data?.results ?? [];
+
+      if (results.length === 0) {
+        setSuggestions([]);
+        setNoResults(true);
+        setOpen(true);
+      } else {
+        setSuggestions(results);
+        setNoResults(false);
+        setOpen(true);
+      }
+    } catch {
+      setSuggestions([]);
+      setNoResults(false);
+    } finally {
+      setSearching(false);
+    }
+  }, [apiKey]);
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    onChange(val);
+    // Clear confirmed state upstream handled by parent's onChange
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchSuggestions(val), 350);
+  };
+
+  const handleSelect = (result) => {
+    const address = result.formatted || result.address_line1 || result.city || '';
+    const lat = result.lat;
+    const lon = result.lon;
+    onSuggestionSelect({ address, lat, lon });
+    setSuggestions([]);
+    setNoResults(false);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <input
+          type="text"
+          required
+          value={value}
+          onChange={handleChange}
+          onFocus={() => (suggestions.length > 0 || noResults) && setOpen(true)}
+          placeholder="Search event location..."
+          autoComplete="off"
+          className="w-full px-3 py-2 pr-8 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+        />
+        {searching && (
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+            <Loader className="w-3.5 h-3.5 text-gray-400 animate-spin" />
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <ul className="absolute z-50 mt-1 w-full bg-white border border-brand-border rounded-md shadow-md overflow-hidden text-sm">
+          {noResults ? (
+            <li className="px-4 py-3 text-xs text-gray-500 italic">
+              No matching location found.
+            </li>
+          ) : (
+            suggestions.map((result, idx) => (
+              <li
+                key={idx}
+                onMouseDown={() => handleSelect(result)}
+                className="px-4 py-2.5 flex items-start space-x-2 hover:bg-brand-secondary cursor-pointer border-b border-brand-border last:border-b-0"
+              >
+                <MapPin className="w-3.5 h-3.5 text-brand-primary flex-shrink-0 mt-0.5" />
+                <span className="text-xs text-brand-dark leading-snug">
+                  {result.formatted || result.address_line1 || result.city}
+                </span>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+};
 
 export const PostRequirement = () => {
   const { profile } = useAuth();
@@ -19,24 +138,34 @@ export const PostRequirement = () => {
   const [isUrgent, setIsUrgent] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [locationConfirmed, setLocationConfirmed] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const prefillMockLocation = () => {
-    // Standard coordinates (e.g., Connaught Place, New Delhi)
-    setLocationName('Connaught Place, New Delhi');
-    setLatitude('28.6304');
-    setLongitude('77.2177');
+  const handleSuggestionSelect = ({ address, lat, lon }) => {
+    setLocationName(address);
+    setLatitude(String(lat));
+    setLongitude(String(lon));
+    setLocationConfirmed(true);
+    setErrorMsg('');
+  };
+
+  const handleLocationChange = (val) => {
+    setLocationName(val);
+    if (locationConfirmed) {
+      setLocationConfirmed(false);
+      setLatitude('');
+      setLongitude('');
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
-    setLoading(false);
 
     if (!latitude || !longitude) {
-      setErrorMsg('Latitude and Longitude are required for geo-checkins.');
+      setErrorMsg('Please select a location from the suggestions to capture coordinates.');
       return;
     }
 
@@ -58,7 +187,7 @@ export const PostRequirement = () => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
       const token = JSON.parse(localStorage.getItem('hh_session'))?.access_token;
-      
+
       const response = await fetch(`${apiUrl}/api/requirements`, {
         method: 'POST',
         headers: {
@@ -75,9 +204,7 @@ export const PostRequirement = () => {
       }
 
       setSuccessMsg('Requirement posted successfully! Redirecting...');
-      setTimeout(() => {
-        navigate('/ngo-dashboard');
-      }, 2000);
+      setTimeout(() => navigate('/ngo-dashboard'), 2000);
 
     } catch (err) {
       setErrorMsg(err.message || 'An error occurred.');
@@ -89,7 +216,7 @@ export const PostRequirement = () => {
   return (
     <div className="min-h-screen bg-brand-secondary">
       <main className="max-w-3xl mx-auto px-6 py-8">
-        
+
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-brand-dark">Post Volunteering Need</h1>
           <p className="text-sm text-gray-500">Create a verified opportunity for volunteers to apply and check-in.</p>
@@ -115,7 +242,7 @@ export const PostRequirement = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            
+
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Opportunity Title</label>
               <input
@@ -195,58 +322,29 @@ export const PostRequirement = () => {
             </div>
 
             <div className="border-t border-brand-border pt-4">
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-xs font-bold text-brand-primary uppercase tracking-wider">
-                  Event Geolocation (For Attendance)
+              <label className="block text-xs font-bold text-brand-primary uppercase tracking-wider mb-3">
+                Event Location (For Attendance)
+              </label>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Location Name
                 </label>
-                <button
-                  type="button"
-                  onClick={prefillMockLocation}
-                  className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 bg-brand-secondary border border-brand-border text-brand-primary hover:bg-gray-100 rounded-md transition-all cursor-pointer"
-                >
-                  Prefill Delhi Mock Coordinates
-                </button>
+                <GeoapifyAutocomplete
+                  value={locationName}
+                  onChange={handleLocationChange}
+                  onSuggestionSelect={handleSuggestionSelect}
+                />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="sm:col-span-1">
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Location Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={locationName}
-                    onChange={(e) => setLocationName(e.target.value)}
-                    placeholder="e.g. Connaught Place"
-                    className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none"
-                  />
+              {locationConfirmed && latitude && longitude && (
+                <div className="mt-2 flex items-center space-x-2 text-xs text-brand-success">
+                  <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>
+                    Location confirmed: {parseFloat(latitude).toFixed(4)}, {parseFloat(longitude).toFixed(4)}
+                  </span>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Latitude</label>
-                  <input
-                    type="number"
-                    step="0.000001"
-                    required
-                    value={latitude}
-                    onChange={(e) => setLatitude(e.target.value)}
-                    placeholder="e.g. 28.6304"
-                    className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Longitude</label>
-                  <input
-                    type="number"
-                    step="0.000001"
-                    required
-                    value={longitude}
-                    onChange={(e) => setLongitude(e.target.value)}
-                    placeholder="e.g. 77.2177"
-                    className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none"
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="flex items-center space-x-2">

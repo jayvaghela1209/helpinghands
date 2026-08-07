@@ -23,7 +23,7 @@ ALLOWED_FOCUS_AREAS = [
 
 class NgoProfileCreateUpdate(BaseModel):
     organization_name: str = Field(..., max_length=200)
-    registration_number: str = Field(..., max_length=100)
+    registration_number: Optional[str] = Field(None, max_length=100)
     pan_number: Optional[str] = Field(None, max_length=20)
     darpan_id: Optional[str] = Field(None, max_length=100)
     focus_areas: List[str] = []

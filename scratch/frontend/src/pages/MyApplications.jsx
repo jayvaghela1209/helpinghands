@@ -58,18 +58,30 @@ export const MyApplications = () => {
 
   const [checkInMsg, setCheckInMsg] = useState({});
 
-  const handleCheckIn = (appId) => {
+  const handleCheckIn = (appId, requirementId) => {
     if (!navigator.geolocation) {
       setCheckInMsg(prev => ({ ...prev, [appId]: 'Geolocation not supported' }));
       return;
     }
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        // Diagnostic log — GPS values from browser
+        console.log('[CheckIn] GPS coords from navigator.geolocation:', {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+
+        const payload = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
+
+        // Endpoint uses requirement id, NOT application id
+        console.log('[CheckIn] Sending payload to POST /api/requirements/' + requirementId + '/checkin', payload);
+
         try {
-          await api.post(`/api/applications/${appId}/checkin`, {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
+          await api.post(`/api/requirements/${requirementId}/checkin`, payload);
           setApplications(prev => prev.map(app => app.id === appId ? { ...app, attendance_status: 'checked_in' } : app));
           setCheckInMsg(prev => ({ ...prev, [appId]: 'Checked in successfully' }));
         } catch (err) {
@@ -78,7 +90,8 @@ export const MyApplications = () => {
       },
       (geoErr) => {
         setCheckInMsg(prev => ({ ...prev, [appId]: geoErr.message || 'Unable to get location' }));
-      }
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
@@ -183,7 +196,7 @@ export const MyApplications = () => {
                       {attStatus === 'none' && (
                         <button
                           className="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 flex items-center cursor-pointer"
-                          onClick={() => handleCheckIn(app.id)}
+                          onClick={() => handleCheckIn(app.id, app.requirement_id)}
                         >
                           <Check className="w-3 h-3 mr-1" />Check‑In
                         </button>

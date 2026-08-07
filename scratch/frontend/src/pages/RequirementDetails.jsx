@@ -119,13 +119,28 @@ const RequirementDetails = () => {
     setActionMsg('');
     try {
       const getLocation = () => new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject);
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+        });
       });
       const pos = await getLocation();
+
+      // Diagnostic log — GPS values from browser
+      console.log('[CheckIn] GPS coords from navigator.geolocation:', {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      });
+
       const payload = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+
+      // Endpoint uses requirement id (id from useParams), NOT the application id
+      console.log('[CheckIn] Sending payload to POST /api/requirements/' + id + '/checkin', payload);
+
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
       const token = JSON.parse(localStorage.getItem('hh_session'))?.access_token;
-      const res = await fetch(`${apiUrl}/api/applications/${appliedInfo.appId}/checkin`, {
+      const res = await fetch(`${apiUrl}/api/requirements/${id}/checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),

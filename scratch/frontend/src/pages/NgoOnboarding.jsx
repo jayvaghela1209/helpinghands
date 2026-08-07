@@ -80,8 +80,8 @@ export const NgoOnboarding = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!organizationName.trim() || !registrationNumber.trim()) {
-      setErrorMsg('Organization Name and Registration Number are required.');
+    if (!organizationName.trim()) {
+      setErrorMsg('Organization Name is required.');
       return;
     }
 
@@ -100,7 +100,7 @@ export const NgoOnboarding = () => {
 
       const payload = {
         organization_name: organizationName,
-        registration_number: registrationNumber,
+        registration_number: registrationNumber.trim() || null,
         pan_number: panNumber || null,
         darpan_id: darpanId || null,
         focus_areas: selectedFocusAreas
@@ -202,11 +202,10 @@ export const NgoOnboarding = () => {
 
                 <div>
                   <label className="block text-xs font-semibold text-brand-dark uppercase mb-1">
-                    Registration Number <span className="text-brand-error">*</span>
+                    Registration Number <span className="text-gray-400 font-normal">(Optional)</span>
                   </label>
                   <input
                     type="text"
-                    required
                     placeholder="e.g. REG-123456"
                     value={registrationNumber}
                     onChange={(e) => setRegistrationNumber(e.target.value)}

@@ -15,7 +15,7 @@ export const Navbar = () => {
   return (
     <header className="bg-white border-b border-brand-border sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        
+
         {/* Left Section: Branding */}
         <div className="flex items-center space-x-8">
           <Link to="/" className="flex items-center space-x-2">
@@ -30,9 +30,9 @@ export const Navbar = () => {
             <Link to="/" className="text-gray-600 hover:text-brand-accent transition-colors">Home</Link>
             <Link to="/about" className="text-gray-600 hover:text-brand-accent transition-colors">About Us</Link>
             <Link to="/contact" className="text-gray-600 hover:text-brand-accent transition-colors">Contact</Link>
-            
+
             {profile && <span className="text-brand-border">|</span>}
-            
+
             {profile && profile.role === 'volunteer' && (
               <>
                 <Link to="/volunteer-dashboard" className="text-brand-primary hover:text-brand-accent transition-colors">Dashboard</Link>
@@ -48,8 +48,7 @@ export const Navbar = () => {
               <>
                 <Link to="/ngo-dashboard" className="text-brand-primary hover:text-brand-accent transition-colors">NGO Dashboard</Link>
                 <span className="text-brand-border">|</span>
-                <span className="text-gray-400 cursor-not-allowed">Create Need</span>
-                <span className="text-gray-400 cursor-not-allowed">My Volunteers</span>
+
               </>
             )}
             {profile && profile.role === 'corporate' && (
@@ -99,14 +98,14 @@ export const Navbar = () => {
             </>
           ) : (
             <div className="flex items-center space-x-3">
-              <Link 
-                to="/login" 
+              <Link
+                to="/login"
                 className="text-xs font-medium text-brand-primary hover:text-brand-accent transition-colors px-3 py-2"
               >
                 Login
               </Link>
-              <Link 
-                to="/signup" 
+              <Link
+                to="/signup"
                 className="text-xs font-medium bg-brand-primary text-white border border-brand-primary hover:bg-opacity-90 hover:border-opacity-90 transition-all px-3.5 py-2 rounded-md"
               >
                 Sign Up
