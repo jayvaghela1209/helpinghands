@@ -13,7 +13,7 @@ const BrowseOpportunities = () => {
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [appliedRequirementIds, setAppliedRequirementIds] = useState(new Set());
+  const [appliedRequirementIds, setAppliedRequirementIds] = useState({});
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState('');
 
@@ -50,8 +50,11 @@ const BrowseOpportunities = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        const ids = new Set(data.map(app => app.requirement_id));
-        setAppliedRequirementIds(ids);
+        const mapping = {};
+        data.forEach(app => {
+            mapping[app.requirement_id] = { appId: app.id, status: app.status };
+        });
+        setAppliedRequirementIds(mapping);
       }
     } catch (err) {
       console.error('Error fetching applications status:', err);
@@ -62,6 +65,8 @@ const BrowseOpportunities = () => {
     fetchOpportunities();
     if (user) {
       fetchMyApplications();
+      const interval = setInterval(fetchMyApplications, 15000);
+      return () => clearInterval(interval);
     }
   }, [user]);
 
@@ -89,10 +94,32 @@ const BrowseOpportunities = () => {
       await fetchMyApplications();
       
       // Update local state seat count
-      setOpportunities(prev =>
-        prev.map(opp => opp.id === reqId ? { ...opp, seats_filled: opp.seats_filled + 1 } : opp)
-      );
+      // Seats will be updated by backend when application is accepted; no local increment needed
 
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleWithdraw = async (appId) => {
+    setActionLoadingId(appId);
+    setErrorMsg('');
+    setActionSuccessMsg('');
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const token = JSON.parse(localStorage.getItem('hh_session'))?.access_token;
+      const response = await fetch(`${apiUrl}/api/applications/${appId}/withdraw`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Withdraw failed');
+      }
+      setActionSuccessMsg('Application withdrawn successfully');
+      await fetchMyApplications();
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -181,8 +208,10 @@ const BrowseOpportunities = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filtered.map(opp => {
-              const isApplied = appliedRequirementIds.has(opp.id);
+              const appInfo = appliedRequirementIds[opp.id];
+              const isApplied = !!appInfo;
               const isFull = opp.seats_filled >= opp.seats_total;
+              const status = appInfo ? appInfo.status : null;
 
               return (
                 <div key={opp.id} className="bg-white border border-brand-border rounded-md p-6 flex flex-col justify-between hover:border-gray-400 transition-all relative">
@@ -222,12 +251,23 @@ const BrowseOpportunities = () => {
 
                   <div className="mt-6 pt-4">
                     {isApplied ? (
-                      <button
-                        disabled
-                        className="w-full py-2 bg-brand-secondary border border-brand-border text-brand-primary font-bold text-xs rounded-md cursor-not-allowed text-center"
-                      >
-                        ✓ Applied
-                      </button>
+                      <div className="flex flex-col space-y-2">
+                        <button
+                          disabled
+                          className="w-full py-2 bg-brand-secondary border border-brand-border text-brand-primary font-bold text-xs rounded-md cursor-not-allowed text-center"
+                        >
+                          ✓ {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </button>
+                        {(status === 'pending' || status === 'accepted') && (
+                          <button
+                            onClick={() => handleWithdraw(appInfo.appId)}
+                            disabled={actionLoadingId === appInfo.appId}
+                            className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
+                          >
+                            {actionLoadingId === appInfo.appId ? 'Withdrawing...' : 'Withdraw'}
+                          </button>
+                        )}
+                      </div>
                     ) : isFull ? (
                       <button
                         disabled

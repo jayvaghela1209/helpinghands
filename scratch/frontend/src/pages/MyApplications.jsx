@@ -26,7 +26,12 @@ export const MyApplications = () => {
         setLoading(false);
       }
     };
-    if (user) fetchApps();
+    if (!user) return;
+    // Initial fetch
+    fetchApps();
+    // Poll every 15 seconds to keep status up‑to‑date
+    const intervalId = setInterval(fetchApps, 15000);
+    return () => clearInterval(intervalId);
   }, [user]);
 
   const statusBadge = (status) => {

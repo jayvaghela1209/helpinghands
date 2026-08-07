@@ -174,7 +174,57 @@ async def list_my_applications(
     """)
     result = await db.execute(query, {"user_id": current_user["id"]})
     return result.mappings().all()
-from fastapi import Body
+
+@router.post("/applications/{id}/withdraw")
+async def withdraw_application(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_role([UserRole.volunteer]))
+):
+    # Verify application belongs to volunteer
+    app_query = text("""
+        SELECT a.id, a.volunteer_profile_id, a.status, a.applied_at,
+               a.requirement_id
+        FROM applications a
+        JOIN volunteer_profiles vp ON a.volunteer_profile_id = vp.id
+        WHERE a.id = :id AND vp.user_id = :user_id
+    """)
+    app_res = await db.execute(app_query, {"id": id, "user_id": current_user["id"]})
+    app = app_res.mappings().first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    # Enforce 48-hour rule
+    now = datetime.now(timezone.utc)
+    applied_at = app["applied_at"]
+    if not applied_at:
+        raise HTTPException(status_code=400, detail="Application timestamp missing")
+    elapsed = now - applied_at
+    if elapsed.total_seconds() > 48 * 3600:
+        raise HTTPException(status_code=400, detail="Withdrawal window has expired")
+    # Prevent withdrawal after check‑in or verification
+    attend_check = text("""
+        SELECT status FROM attendance
+        WHERE requirement_id = :req_id AND volunteer_profile_id = :vol_id
+    """)
+    attend_res = await db.execute(attend_check, {"req_id": app["requirement_id"], "vol_id": app["volunteer_profile_id"]})
+    attend = attend_res.first()
+    if attend and attend["status"] in ("checked_in", "verified"):
+        raise HTTPException(status_code=400, detail="Cannot withdraw after check‑in")
+    # If the application was accepted, decrement seats_filled (prevent negative)
+    if app["status"] == "accepted":
+        dec_req = text("""
+            UPDATE requirements
+            SET seats_filled = GREATEST(seats_filled - 1, 0)
+            WHERE id = :req_id
+        """)
+        await db.execute(dec_req, {"req_id": app["requirement_id"]})
+    # Update status to withdrawn
+    await db.execute(
+        text("UPDATE applications SET status = 'withdrawn', decided_at = :now WHERE id = :id"),
+        {"now": now, "id": id}
+    )
+    await db.commit()
+    return {"status": "withdrawn", "application_id": id}
 
 @router.post("/applications/{id}/checkin")
 async def checkin_application(
