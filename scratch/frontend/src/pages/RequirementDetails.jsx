@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { CheckCircle, AlertCircle, Clock, Flame, Star } from 'lucide-react';
+import { CheckCircle, AlertCircle, Clock, Flame, Star, ArrowLeft, Download, Award } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import { api } from '../services/api';
 
@@ -169,16 +169,43 @@ const RequirementDetails = () => {
     }
   };
 
-  // Placeholder for certificate generation
-  const handleGenerateCertificate = () => {
-    // Implementation resides elsewhere; this button simply signals intent.
-    setActionMsg('Certificate generation not implemented in this view');
+  // Real certificate generation handler
+  const handleGenerateCertificate = async () => {
+    if (!appliedInfo?.appId) return;
+    setActionLoading(true);
+    setActionMsg('');
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const token = JSON.parse(localStorage.getItem('hh_session'))?.access_token;
+      const res = await fetch(`${apiUrl}/api/applications/${appliedInfo.appId}/certificate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Certificate generation failed');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `HelpingHands_Certificate_${id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setActionMsg('Certificate downloaded successfully!');
+    } catch (e) {
+      setActionMsg(e.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-brand-secondary"><Navbar />Loading...</div>
+      <div className="min-h-screen bg-brand-secondary"><Navbar /><div className="text-center py-16">Loading...</div></div>
     );
   }
 
@@ -217,8 +244,12 @@ const RequirementDetails = () => {
 
   return (
     <div className="min-h-screen bg-brand-secondary">
-
       <main className="max-w-5xl mx-auto px-6 py-8">
+        <div className="mb-4">
+          <Link to="/volunteer-dashboard" className="inline-flex items-center text-xs font-semibold text-brand-primary hover:underline">
+            <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Dashboard
+          </Link>
+        </div>
         <div className="flex items-center mb-4">
           <h1 className="text-3xl font-bold text-brand-dark mr-2">{title}</h1>
           {is_urgent && (
@@ -258,7 +289,7 @@ const RequirementDetails = () => {
               onClick={handleApply}
               disabled={actionLoading}
               className="w-full py-2 bg-brand-primary hover:bg-opacity-95 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
-            >+
+            >
               {actionLoading ? 'Applying…' : 'Apply Now'}
             </button>
           )}
@@ -286,19 +317,23 @@ const RequirementDetails = () => {
               )}
               {attendanceStatus === 'verified' && (
                 <div className="flex flex-col space-y-2">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-100 text-indigo-800">Verified</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-indigo-100 text-indigo-800 font-semibold w-fit">
+                    <CheckCircle className="w-3 h-3 mr-1" /> Attendance Verified
+                  </span>
                   <button
                     onClick={handleGenerateCertificate}
-                    className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
+                    disabled={actionLoading}
+                    className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer flex items-center justify-center space-x-1"
                   >
-                    Generate Certificate
+                    <Download className="w-3.5 h-3.5 mr-1" />
+                    <span>{actionLoading ? 'Generating PDF...' : 'Download Certificate'}</span>
                   </button>
                 </div>
               )}
             </div>
           )}
 
-          {actionMsg && <p className="mt-2 text-sm text-green-600">{actionMsg}</p>}
+          {actionMsg && <p className="mt-2 text-sm font-semibold text-green-600">{actionMsg}</p>}
         </div>
       </main>
     </div>

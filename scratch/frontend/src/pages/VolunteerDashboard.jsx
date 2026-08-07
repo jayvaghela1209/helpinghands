@@ -179,6 +179,7 @@ export const VolunteerDashboard = () => {
                 <h2 className="text-sm font-bold text-brand-dark uppercase">My Applications</h2>
                 <div className="flex items-center space-x-3">
                   <span className="text-xs text-gray-400 font-mono">{applications?.length ?? 0} Total</span>
+                  <Link to="/volunteer/certificates" className="text-xs font-semibold text-brand-primary bg-purple-50 border border-purple-200 hover:bg-purple-100 px-3 py-1 rounded-md transition-all">My Certificates</Link>
                   <Link to="/browse-opportunities" className="text-xs font-semibold text-white bg-brand-primary hover:bg-opacity-90 px-3 py-1 rounded-md transition-all">Browse Opportunities</Link>
                 </div>
               </div>
@@ -206,7 +207,7 @@ export const VolunteerDashboard = () => {
           {/* Sidebar Right: Profile Details */}
           <div className="space-y-6">
             <div className="bg-white border border-brand-border rounded-md p-6">
-              <h2 className="text-sm font-bold text-brand-dark uppercase border-b border-brand-border pb-3 mb-4">Credentials</h2>
+              <h2 className="text-sm font-bold text-brand-dark uppercase border-b border-brand-border pb-3 mb-4">Profile</h2>
               {volProfile ? (
                 <form onSubmit={handleSubmit} className="space-y-4 text-xs">
                   <div>

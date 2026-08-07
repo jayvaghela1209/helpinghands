@@ -35,10 +35,13 @@ export const Navbar = () => {
             
             {profile && profile.role === 'volunteer' && (
               <>
-                <Link to="/volunteer-dashboard" className="text-brand-primary hover:text-brand-accent transition-colors">Volunteer Dashboard</Link>
+                <Link to="/volunteer-dashboard" className="text-brand-primary hover:text-brand-accent transition-colors">Dashboard</Link>
                 <span className="text-brand-border">|</span>
-                <span className="text-gray-400 cursor-not-allowed">Find Opportunities</span>
-                <span className="text-gray-400 cursor-not-allowed">Certificates</span>
+                <Link to="/browse-opportunities" className="text-gray-600 hover:text-brand-accent transition-colors">Find Opportunities</Link>
+                <span className="text-brand-border">|</span>
+                <Link to="/my-applications" className="text-gray-600 hover:text-brand-accent transition-colors">My Applications</Link>
+                <span className="text-brand-border">|</span>
+                <Link to="/volunteer/certificates" className="text-gray-600 hover:text-brand-accent transition-colors">Certificates</Link>
               </>
             )}
             {profile && profile.role === 'ngo' && (

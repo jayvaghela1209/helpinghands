@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
-import { UserCheck, UserX, Calendar, MapPin, Users, Flame, CheckCircle, AlertCircle, Search } from 'lucide-react';
+import { UserCheck, UserX, Calendar, MapPin, Users, Flame, CheckCircle, AlertCircle, Search, ArrowLeft, Download } from 'lucide-react';
 
 const BrowseOpportunities = () => {
   const { user } = useAuth();
@@ -29,7 +29,6 @@ const BrowseOpportunities = () => {
 
       const data = await response.json();
       console.log('Fetched opportunities response:', data);
-      // Backend may return array directly or an object containing an array
       const opportunitiesArray = Array.isArray(data) ? data : (data.requirements || []);
       setOpportunities(opportunitiesArray);
     } catch (err) {
@@ -52,7 +51,11 @@ const BrowseOpportunities = () => {
         const data = await response.json();
         const mapping = {};
         data.forEach(app => {
-            mapping[app.requirement_id] = { appId: app.id, status: app.status };
+            mapping[app.requirement_id] = {
+              appId: app.id,
+              status: app.status,
+              attendance_status: app.attendance_status
+            };
         });
         setAppliedRequirementIds(mapping);
       }
@@ -92,9 +95,6 @@ const BrowseOpportunities = () => {
 
       setActionSuccessMsg('Applied successfully! NGO will review your application.');
       await fetchMyApplications();
-      
-      // Update local state seat count
-      // Seats will be updated by backend when application is accepted; no local increment needed
 
     } catch (err) {
       setErrorMsg(err.message);
@@ -127,6 +127,38 @@ const BrowseOpportunities = () => {
     }
   };
 
+  const handleDownloadCert = async (appId, reqId) => {
+    setActionLoadingId(appId);
+    setErrorMsg('');
+    setActionSuccessMsg('');
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const token = JSON.parse(localStorage.getItem('hh_session'))?.access_token;
+      const res = await fetch(`${apiUrl}/api/applications/${appId}/certificate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || 'Failed to download certificate');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `HelpingHands_Certificate_${reqId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setActionSuccessMsg('Certificate downloaded successfully!');
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   // Filter logic: Only requirements with status === 'open' are shown
   const filtered = opportunities.filter(opp => {
     const isOpen = opp.status === 'open';
@@ -144,6 +176,15 @@ const BrowseOpportunities = () => {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         
+        {/* Back to Dashboard link */}
+        {user && user.role === 'volunteer' && (
+          <div className="mb-4">
+            <Link to="/volunteer-dashboard" className="inline-flex items-center text-xs font-semibold text-brand-primary hover:underline">
+              <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Dashboard
+            </Link>
+          </div>
+        )}
+
         {/* Header */}
         <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -212,6 +253,7 @@ const BrowseOpportunities = () => {
               const isApplied = !!appInfo;
               const isFull = opp.seats_filled >= opp.seats_total;
               const status = appInfo ? appInfo.status : null;
+              const attendanceStatus = appInfo ? appInfo.attendance_status : 'none';
 
               return (
                 <div key={opp.id} className="bg-white border border-brand-border rounded-md p-6 flex flex-col justify-between hover:border-gray-400 transition-all relative">
@@ -254,17 +296,30 @@ const BrowseOpportunities = () => {
                       <div className="flex flex-col space-y-2">
                         <button
                           disabled
-                          className="w-full py-2 bg-brand-secondary border border-brand-border text-brand-primary font-bold text-xs rounded-md cursor-not-allowed text-center"
+                          className="w-full py-2 bg-brand-secondary border border-brand-border text-brand-primary font-bold text-xs rounded-md cursor-not-allowed text-center capitalize"
                         >
-                          ✓ {status.charAt(0).toUpperCase() + status.slice(1)}
+                          ✓ {status} {attendanceStatus !== 'none' ? `(${attendanceStatus})` : ''}
                         </button>
-                        {(status === 'pending' || status === 'accepted') && (
+                        {/* Allow withdraw ONLY before check-in (not checked_in or verified) */}
+                        {(status === 'pending' || status === 'accepted') &&
+                          (attendanceStatus !== 'checked_in' && attendanceStatus !== 'verified') && (
+                            <button
+                              onClick={() => handleWithdraw(appInfo.appId)}
+                              disabled={actionLoadingId === appInfo.appId}
+                              className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
+                            >
+                              {actionLoadingId === appInfo.appId ? 'Withdrawing...' : 'Withdraw'}
+                            </button>
+                          )}
+                        {/* Download Certificate action if verified */}
+                        {attendanceStatus === 'verified' && (
                           <button
-                            onClick={() => handleWithdraw(appInfo.appId)}
+                            onClick={() => handleDownloadCert(appInfo.appId, opp.id)}
                             disabled={actionLoadingId === appInfo.appId}
-                            className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
+                            className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer flex items-center justify-center space-x-1"
                           >
-                            {actionLoadingId === appInfo.appId ? 'Withdrawing...' : 'Withdraw'}
+                            <Download className="w-3.5 h-3.5 mr-1" />
+                            <span>{actionLoadingId === appInfo.appId ? 'Downloading...' : 'Download Certificate'}</span>
                           </button>
                         )}
                       </div>
