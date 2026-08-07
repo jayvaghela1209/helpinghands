@@ -17,6 +17,9 @@ import ManageRequirements from './pages/ManageRequirements';
 import NgoOnboarding from './pages/NgoOnboarding';
 import ReviewApplicants from './pages/ReviewApplicants';
 import BrowseOpportunities from './pages/BrowseOpportunities.jsx';
+import RequirementDetails from './pages/RequirementDetails.jsx';
+import MyApplications from './pages/MyApplications.jsx';
+import Certificates from './pages/Certificates.jsx';
 import CorporateDashboard from './pages/CorporateDashboard';
 import AttendanceView from './pages/AttendanceView';
 import AdminDashboard from './pages/AdminDashboard';
@@ -38,7 +41,10 @@ function App() {
             {/* Protected Volunteer Routes */}
             <Route element={<ProtectedRoute allowedRoles={['volunteer']} />}>
               <Route path="/volunteer-dashboard" element={<VolunteerDashboard />} />
-                <Route path="/browse-opportunities" element={<BrowseOpportunities />} />
+              <Route path="/browse-opportunities" element={<BrowseOpportunities />} />
+              <Route path="/requirement/:id" element={<RequirementDetails />} />
+              <Route path="/my-applications" element={<MyApplications />} />
+              <Route path="/volunteer/certificates" element={<Certificates />} />
             </Route>
             
             {/* Protected NGO Routes */}

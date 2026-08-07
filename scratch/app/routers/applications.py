@@ -1,10 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
+import io
+import uuid
+
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
 
 from app.db import get_db
 from app.routers.auth import get_current_user, require_role
@@ -164,7 +170,9 @@ async def list_my_applications(
         SELECT a.id, a.status, a.applied_at, a.decided_at,
                r.id as requirement_id, r.title, r.category, r.event_date, r.location_name,
                COALESCE(at.status, 'none') as attendance_status,
-               EXISTS (SELECT 1 FROM ngo_reviews nr WHERE nr.volunteer_profile_id = vp.id AND nr.requirement_id = r.id) as has_review
+               at.worked_hours as worked_hours,
+               EXISTS (SELECT 1 FROM ngo_reviews nr WHERE nr.volunteer_profile_id = vp.id AND nr.requirement_id = r.id) as has_review,
+               EXISTS (SELECT 1 FROM certificates c WHERE c.volunteer_profile_id = vp.id AND c.requirement_id = r.id) as has_certificate
         FROM applications a
         JOIN requirements r ON a.requirement_id = r.id
         JOIN volunteer_profiles vp ON a.volunteer_profile_id = vp.id
@@ -174,7 +182,355 @@ async def list_my_applications(
     """)
     result = await db.execute(query, {"user_id": current_user["id"]})
     return result.mappings().all()
-from fastapi import Body
+
+@router.post("/applications/{id}/withdraw")
+async def withdraw_application(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_role([UserRole.volunteer]))
+):
+    # Verify application belongs to volunteer
+    app_query = text("""
+        SELECT a.id, a.volunteer_profile_id, a.status, a.applied_at,
+               a.requirement_id
+        FROM applications a
+        JOIN volunteer_profiles vp ON a.volunteer_profile_id = vp.id
+        WHERE a.id = :id AND vp.user_id = :user_id
+    """)
+    app_res = await db.execute(app_query, {"id": id, "user_id": current_user["id"]})
+    app = app_res.mappings().first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    # Enforce 48-hour rule
+    now = datetime.now(timezone.utc)
+    applied_at = app["applied_at"]
+    if not applied_at:
+        raise HTTPException(status_code=400, detail="Application timestamp missing")
+    elapsed = now - applied_at
+    if elapsed.total_seconds() > 48 * 3600:
+        raise HTTPException(status_code=400, detail="Withdrawal window has expired")
+    # Prevent withdrawal after check-in or verification
+    attend_check = text("""
+        SELECT status FROM attendance
+        WHERE requirement_id = :req_id AND volunteer_profile_id = :vol_id
+    """)
+    attend_res = await db.execute(attend_check, {"req_id": app["requirement_id"], "vol_id": app["volunteer_profile_id"]})
+    attend_row = attend_res.first()
+    if attend_row:
+        att_status = attend_row[0] if isinstance(attend_row, tuple) else (getattr(attend_row, 'status', None) or attend_row.get('status'))
+        if att_status in ("checked_in", "verified"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot withdraw after check-in or event completion"
+            )
+
+    # If the application was accepted, decrement seats_filled (prevent negative)
+    if app["status"] == "accepted":
+        dec_req = text("""
+            UPDATE requirements
+            SET seats_filled = GREATEST(seats_filled - 1, 0)
+            WHERE id = :req_id
+        """)
+        await db.execute(dec_req, {"req_id": app["requirement_id"]})
+    # Update status to withdrawn
+    await db.execute(
+        text("UPDATE applications SET status = 'withdrawn', decided_at = :now WHERE id = :id"),
+        {"now": now, "id": id}
+    )
+    await db.commit()
+    return {"status": "withdrawn", "application_id": id}
+
+
+def build_certificate_pdf(
+    volunteer_name: str,
+    event_title: str,
+    ngo_name: str,
+    event_date: str,
+    location_name: str,
+    worked_hours: float,
+    cert_number: str,
+    issue_date: str
+) -> bytes:
+    """Generates a landscape PDF certificate using ReportLab matching HelpingHands visual styling."""
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=landscape(A4))
+    width, height = landscape(A4)
+
+    # Soft off-white canvas background
+    c.setFillColor(colors.HexColor('#F8FAFC'))
+    c.rect(0, 0, width, height, fill=1, stroke=0)
+
+    # Outer Border Frame (Navy Blue)
+    c.setStrokeColor(colors.HexColor('#1E3A8A'))
+    c.setLineWidth(4)
+    c.rect(25, 25, width - 50, height - 50)
+
+    # Inner Border Frame (Gold / Amber Accent)
+    c.setStrokeColor(colors.HexColor('#D97706'))
+    c.setLineWidth(1.5)
+    c.rect(32, 32, width - 64, height - 64)
+
+    # Corner Decorative Accents
+    c.setStrokeColor(colors.HexColor('#1E3A8A'))
+    c.setLineWidth(2)
+    # top-left
+    c.line(36, height - 45, 60, height - 45)
+    c.line(45, height - 36, 45, height - 60)
+    # top-right
+    c.line(width - 60, height - 45, width - 36, height - 45)
+    c.line(width - 45, height - 36, width - 45, height - 60)
+    # bottom-left
+    c.line(36, 45, 60, 45)
+    c.line(45, 36, 45, 60)
+    # bottom-right
+    c.line(width - 60, 45, width - 36, 45)
+    c.line(width - 45, 36, width - 45, 60)
+
+    # Top Branding Header
+    c.setFont('Helvetica-Bold', 18)
+    c.setFillColor(colors.HexColor('#1E3A8A'))
+    c.drawCentredString(width / 2, height - 75, 'HELPINGHANDS')
+
+    c.setFont('Helvetica-Bold', 9)
+    c.setFillColor(colors.HexColor('#64748B'))
+    c.drawCentredString(width / 2, height - 90, 'VERIFIED VOLUNTEERING & COMPLIANCE PLATFORM')
+
+    # Horizontal Divider Line
+    c.setStrokeColor(colors.HexColor('#CBD5E1'))
+    c.setLineWidth(1)
+    c.line(width / 2 - 160, height - 102, width / 2 + 160, height - 102)
+
+    # Main Certificate Heading
+    c.setFont('Helvetica-Bold', 28)
+    c.setFillColor(colors.HexColor('#0F172A'))
+    c.drawCentredString(width / 2, height - 145, 'CERTIFICATE OF RECOGNITION')
+
+    # Subtitle
+    c.setFont('Helvetica', 12)
+    c.setFillColor(colors.HexColor('#475569'))
+    c.drawCentredString(width / 2, height - 175, 'THIS CERTIFICATE IS PROUDLY PRESENTED TO')
+
+    # Volunteer Full Name
+    c.setFont('Helvetica-Bold', 24)
+    c.setFillColor(colors.HexColor('#1E3A8A'))
+    c.drawCentredString(width / 2, height - 215, volunteer_name or 'Volunteer')
+
+    # Underline accent for volunteer name
+    c.setStrokeColor(colors.HexColor('#D97706'))
+    c.setLineWidth(1.5)
+    c.line(width / 2 - 180, height - 225, width / 2 + 180, height - 225)
+
+    # Recognition body text
+    c.setFont('Helvetica', 12)
+    c.setFillColor(colors.HexColor('#334155'))
+    c.drawCentredString(width / 2, height - 260, 'For outstanding dedication, community service, and verified volunteer participation in')
+
+    # Event / Opportunity Title
+    c.setFont('Helvetica-Bold', 18)
+    c.setFillColor(colors.HexColor('#0F172A'))
+    c.drawCentredString(width / 2, height - 295, f'"{event_title}"')
+
+    # NGO & Event details
+    c.setFont('Helvetica-Bold', 11)
+    c.setFillColor(colors.HexColor('#475569'))
+    c.drawCentredString(width / 2, height - 325, f'Organized by: {ngo_name}')
+
+    hours_val = float(worked_hours) if worked_hours is not None else 0.0
+    c.setFont('Helvetica', 10)
+    c.setFillColor(colors.HexColor('#64748B'))
+    c.drawCentredString(
+        width / 2, height - 345,
+        f'Event Date: {event_date}   |   Location: {location_name or "Virtual"}   |   Verified Hours: {hours_val:.1f} hrs'
+    )
+
+    # Bottom Footer & Verification Meta
+    c.setFont('Helvetica-Bold', 9)
+    c.setFillColor(colors.HexColor('#1E3A8A'))
+    c.drawString(70, 110, f'Certificate ID: {cert_number}')
+    c.drawString(70, 95, f'Issue Date: {issue_date}')
+    c.setFont('Helvetica', 8)
+    c.setFillColor(colors.HexColor('#64748B'))
+    c.drawString(70, 80, 'Verified via HelpingHands GPS & Attendance Audit')
+
+    # Bottom Right Authorized Signature line
+    c.setStrokeColor(colors.HexColor('#94A3B8'))
+    c.setLineWidth(1)
+    c.line(width - 250, 105, width - 70, 105)
+    c.setFont('Helvetica-Bold', 10)
+    c.setFillColor(colors.HexColor('#0F172A'))
+    c.drawCentredString(width - 160, 90, 'Authorized Signatory')
+    c.setFont('Helvetica', 8)
+    c.setFillColor(colors.HexColor('#64748B'))
+    c.drawCentredString(width - 160, 78, f'{ngo_name}')
+
+    c.save()
+    return buffer.getvalue()
+
+
+@router.post("/applications/{id}/certificate")
+async def generate_or_download_certificate(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_role([UserRole.volunteer]))
+):
+    """Generates and downloads the official PDF certificate for a verified volunteering application.
+    Enforces eligibility: attendance.status == 'verified' (both check-in and check-out completed).
+    Prevents duplicates by creating or retrieving existing record from certificates table.
+    """
+    # 1. Fetch application details & volunteer profile
+    app_query = text("""
+        SELECT a.id, a.requirement_id, a.volunteer_profile_id, vp.id AS vp_id, u.name AS volunteer_name
+        FROM applications a
+        JOIN volunteer_profiles vp ON a.volunteer_profile_id = vp.id
+        JOIN users u ON vp.user_id = u.id
+        WHERE a.id = :app_id AND vp.user_id = :user_id
+    """)
+    app_res = await db.execute(app_query, {"app_id": id, "user_id": current_user["id"]})
+    app = app_res.mappings().first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found for current volunteer")
+
+    req_id = app["requirement_id"]
+    vol_profile_id = app["volunteer_profile_id"]
+
+    # 2. Verify attendance status == 'verified'
+    attend_query = text("""
+        SELECT status, worked_hours FROM attendance
+        WHERE requirement_id = :req_id AND volunteer_profile_id = :vol_id
+    """)
+    attend_res = await db.execute(attend_query, {"req_id": req_id, "vol_id": vol_profile_id})
+    attend = attend_res.mappings().first()
+
+    if not attend or attend["status"] != "verified":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Certificate available only after verified check-out"
+        )
+
+    worked_hours = attend["worked_hours"] if attend["worked_hours"] is not None else 0.0
+
+    # 3. Check for existing certificate in certificates table
+    cert_query = text("""
+        SELECT id, certificate_number, worked_hours, issue_date
+        FROM certificates
+        WHERE requirement_id = :req_id AND volunteer_profile_id = :vol_id
+    """)
+    cert_res = await db.execute(cert_query, {"req_id": req_id, "vol_id": vol_profile_id})
+    cert_row = cert_res.mappings().first()
+
+    if cert_row:
+        cert_number = cert_row["certificate_number"]
+        issue_date_str = str(cert_row["issue_date"])
+        worked_hours = cert_row["worked_hours"]
+    else:
+        # Create new certificate record
+        cert_number = f"HH-CERT-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        issue_date_val = datetime.now(timezone.utc).date()
+        issue_date_str = str(issue_date_val)
+
+        try:
+            insert_cert = text("""
+                INSERT INTO certificates (volunteer_profile_id, requirement_id, certificate_number, worked_hours, issue_date, status)
+                VALUES (:vol_id, :req_id, :cert_no, :worked_hours, :issue_date, 'generated')
+                RETURNING id, certificate_number, issue_date
+            """)
+            await db.execute(insert_cert, {
+                "vol_id": vol_profile_id,
+                "req_id": req_id,
+                "cert_no": cert_number,
+                "worked_hours": worked_hours,
+                "issue_date": issue_date_val,
+            })
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            # In case of race condition, fetch existing row
+            re_check = await db.execute(cert_query, {"req_id": req_id, "vol_id": vol_profile_id})
+            re_cert = re_check.mappings().first()
+            if re_cert:
+                cert_number = re_cert["certificate_number"]
+                issue_date_str = str(re_cert["issue_date"])
+            else:
+                raise HTTPException(status_code=400, detail="Failed to create certificate record")
+
+    # 4. Fetch requirement and NGO details for rendering
+    req_query = text("""
+        SELECT r.title, r.event_date, r.location_name, np.organization_name
+        FROM requirements r
+        JOIN ngo_profiles np ON r.ngo_profile_id = np.id
+        WHERE r.id = :req_id
+    """)
+    req_res = await db.execute(req_query, {"req_id": req_id})
+    req_data = req_res.mappings().first()
+
+    event_title = req_data["title"] if req_data else "Volunteering Event"
+    ngo_name = req_data["organization_name"] if req_data else "HelpingHands Partner Organization"
+    event_date_str = str(req_data["event_date"]) if req_data else issue_date_str
+    location_name = req_data["location_name"] if req_data else "Event Location"
+
+    # 5. Generate PDF
+    pdf_bytes = build_certificate_pdf(
+        volunteer_name=app["volunteer_name"],
+        event_title=event_title,
+        ngo_name=ngo_name,
+        event_date=event_date_str,
+        location_name=location_name,
+        worked_hours=worked_hours,
+        cert_number=cert_number,
+        issue_date=issue_date_str
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="HelpingHands_Certificate_{cert_number}.pdf"'
+        }
+    )
+
+
+@router.post("/requirements/{id}/certificate")
+async def generate_certificate_by_requirement(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_role([UserRole.volunteer]))
+):
+    """Generate or download certificate by requirement ID for the current volunteer."""
+    app_query = text("""
+        SELECT id FROM applications
+        WHERE requirement_id = :req_id
+          AND volunteer_profile_id = (SELECT id FROM volunteer_profiles WHERE user_id = :user_id)
+    """)
+    app_res = await db.execute(app_query, {"req_id": id, "user_id": current_user["id"]})
+    app_id = app_res.scalar()
+    if not app_id:
+        raise HTTPException(status_code=404, detail="No application found for this requirement")
+
+    return await generate_or_download_certificate(id=app_id, db=db, current_user=current_user)
+
+
+@router.get("/certificates/my-certificates")
+async def list_my_certificates(
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_role([UserRole.volunteer]))
+):
+    """List all earned certificates for the current logged-in volunteer."""
+    query = text("""
+        SELECT c.id, c.certificate_number, c.worked_hours, c.issue_date, c.status,
+               r.id AS requirement_id, r.title AS requirement_title, r.event_date, r.location_name,
+               np.organization_name AS ngo_name,
+               a.id AS application_id
+        FROM certificates c
+        JOIN volunteer_profiles vp ON c.volunteer_profile_id = vp.id
+        JOIN requirements r ON c.requirement_id = r.id
+        JOIN ngo_profiles np ON r.ngo_profile_id = np.id
+        LEFT JOIN applications a ON a.requirement_id = r.id AND a.volunteer_profile_id = vp.id
+        WHERE vp.user_id = :user_id
+        ORDER BY c.issue_date DESC, c.created_at DESC
+    """)
+    result = await db.execute(query, {"user_id": current_user["id"]})
+    return result.mappings().all()
+
 
 @router.post("/applications/{id}/checkin")
 async def checkin_application(

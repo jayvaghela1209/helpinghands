@@ -35,10 +35,13 @@ export const Navbar = () => {
             
             {profile && profile.role === 'volunteer' && (
               <>
-                <Link to="/volunteer-dashboard" className="text-brand-primary hover:text-brand-accent transition-colors">Volunteer Dashboard</Link>
+                <Link to="/volunteer-dashboard" className="text-brand-primary hover:text-brand-accent transition-colors">Dashboard</Link>
                 <span className="text-brand-border">|</span>
-                <span className="text-gray-400 cursor-not-allowed">Find Opportunities</span>
-                <span className="text-gray-400 cursor-not-allowed">Certificates</span>
+                <Link to="/browse-opportunities" className="text-gray-600 hover:text-brand-accent transition-colors">Find Opportunities</Link>
+                <span className="text-brand-border">|</span>
+                <Link to="/my-applications" className="text-gray-600 hover:text-brand-accent transition-colors">My Applications</Link>
+                <span className="text-brand-border">|</span>
+                <Link to="/volunteer/certificates" className="text-gray-600 hover:text-brand-accent transition-colors">Certificates</Link>
               </>
             )}
             {profile && profile.role === 'ngo' && (
@@ -69,12 +72,12 @@ export const Navbar = () => {
         </div>
 
         {/* Right Section: User Info / Authentication CTAs */}
-        <div className="flex items-center space-x-6">
+        <div className={`flex items-center space-x-6 ${profile ? 'border-l border-brand-border pl-6 ml-4' : ''}`}>
           {profile ? (
             <>
               <div className="text-right">
                 <p className="text-xs font-semibold text-brand-dark">{profile.name}</p>
-                <p className="text-[10px] text-gray-500 font-mono flex items-center justify-end space-x-1">
+                <p className="text-[10px] text-gray-500 font-mono flex items-center justify-end space-x-1 mt-0.5">
                   {profile.role === 'volunteer' && <Activity className="w-3 h-3 text-brand-accent inline" />}
                   {profile.role === 'ngo' && <Award className="w-3 h-3 text-brand-primary inline" />}
                   {profile.role === 'corporate' && <Briefcase className="w-3 h-3 text-brand-primary inline" />}
@@ -82,6 +85,8 @@ export const Navbar = () => {
                   <span className="capitalize">{profile.role}</span>
                 </p>
               </div>
+
+              <span className="h-8 w-px bg-brand-border hidden sm:block"></span>
 
               <button
                 onClick={handleLogout}
