@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { UserCheck, UserX, Calendar, MapPin, Users, Flame, CheckCircle, AlertCircle, Search, ArrowLeft, Download } from 'lucide-react';
+import { formatWorkedHours } from '../lib/format';
 
 const BrowseOpportunities = () => {
   const { user } = useAuth();
@@ -319,7 +320,12 @@ const BrowseOpportunities = () => {
                             className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer flex items-center justify-center space-x-1"
                           >
                             <Download className="w-3.5 h-3.5 mr-1" />
-                            <span>{actionLoadingId === appInfo.appId ? 'Downloading...' : 'Download Certificate'}</span>
+                            <span>
+                              {actionLoadingId === appInfo.appId
+                                ? 'Processing...'
+                                : (appInfo.has_certificate ? 'Download Certificate' : 'Generate Certificate')
+                              }
+                            </span>
                           </button>
                         )}
                       </div>

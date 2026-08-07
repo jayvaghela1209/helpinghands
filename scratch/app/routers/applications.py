@@ -170,7 +170,9 @@ async def list_my_applications(
         SELECT a.id, a.status, a.applied_at, a.decided_at,
                r.id as requirement_id, r.title, r.category, r.event_date, r.location_name,
                COALESCE(at.status, 'none') as attendance_status,
-               EXISTS (SELECT 1 FROM ngo_reviews nr WHERE nr.volunteer_profile_id = vp.id AND nr.requirement_id = r.id) as has_review
+               at.worked_hours as worked_hours,
+               EXISTS (SELECT 1 FROM ngo_reviews nr WHERE nr.volunteer_profile_id = vp.id AND nr.requirement_id = r.id) as has_review,
+               EXISTS (SELECT 1 FROM certificates c WHERE c.volunteer_profile_id = vp.id AND c.requirement_id = r.id) as has_certificate
         FROM applications a
         JOIN requirements r ON a.requirement_id = r.id
         JOIN volunteer_profiles vp ON a.volunteer_profile_id = vp.id

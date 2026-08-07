@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Award, Clock, Star, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
+import { formatWorkedHours } from '../lib/format';
 
 export const VolunteerDashboard = () => {
   const { profile } = useAuth();
@@ -118,7 +119,7 @@ export const VolunteerDashboard = () => {
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase">Verified Hours</p>
-                  <p className="text-2xl font-bold text-brand-dark mt-2">{volProfile.total_hours} hrs</p>
+                  <p className="text-2xl font-bold text-brand-dark mt-2">{formatWorkedHours(volProfile.total_hours)}</p>
                 </div>
                 <div className="p-2 bg-brand-secondary border border-brand-border rounded-md">
                   <Clock className="w-5 h-5 text-brand-primary" />

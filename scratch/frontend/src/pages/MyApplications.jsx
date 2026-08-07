@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Link } from 'react-router-dom';
 import { CheckCircle, AlertCircle, XCircle, Clock, Check, Star, ArrowLeft, Download } from 'lucide-react';
+import { formatWorkedHours } from '../lib/format';
 
 export const MyApplications = () => {
   const { user } = useAuth();
@@ -126,6 +127,9 @@ export const MyApplications = () => {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+      
+      // Update local state to reflect certificate existence immediately!
+      setApplications(prev => prev.map(app => app.id === appId ? { ...app, has_certificate: true } : app));
     } catch (err) {
       setCheckInMsg(prev => ({ ...prev, [appId]: err.message || 'Certificate download failed' }));
     }
@@ -167,6 +171,11 @@ export const MyApplications = () => {
                     <p className="text-sm text-gray-600">Decision on: {new Date(app.decided_at).toLocaleDateString()}</p>
                   )}
                   <p className="text-sm text-gray-500 mt-1">{app.category} • {app.event_date} • {app.location_name}</p>
+                  {app.worked_hours > 0 && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      Worked Time: <strong>{formatWorkedHours(app.worked_hours)}</strong>
+                    </p>
+                  )}
 
                   {/* Attendance Actions */}
                   {app.status === 'accepted' && (
@@ -190,10 +199,11 @@ export const MyApplications = () => {
                       {attStatus === 'verified' && (
                         <>
                           <button
-                            className="px-3 py-1 bg-purple-600 text-white text-xs font-semibold rounded hover:bg-purple-700 flex items-center cursor-pointer"
+                            className="px-3 py-1 bg-purple-600 text-white text-xs font-semibold rounded hover:bg-purple-700 flex items-center cursor-pointer animate-fade-in"
                             onClick={() => handleDownloadCert(app.id, app.requirement_id)}
                           >
-                            <Download className="w-3 h-3 mr-1" />Download Certificate
+                            <Download className="w-3.5 h-3.5 mr-1" />
+                            <span>{app.has_certificate ? 'Download Certificate' : 'Generate Certificate'}</span>
                           </button>
                           {!app.has_review && (
                             <button
