@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Briefcase, Users, Star, ClipboardList, Plus, MapPin, Calendar, Edit, Building2, DollarSign } from 'lucide-react';
+import { Briefcase, Users, Star, ClipboardList, Plus, MapPin, Calendar, Edit, Building2 } from 'lucide-react';
 
 export const NgoDashboard = () => {
   const { profile } = useAuth();
@@ -123,7 +123,7 @@ export const NgoDashboard = () => {
                 <p className="text-2xl font-bold text-brand-dark mt-2">{totalPledgesCount} {totalPledgesCount === 1 ? 'Pledge' : 'Pledges'}</p>
               </div>
               <div className="p-2 bg-brand-secondary border border-brand-border rounded-md">
-                <DollarSign className="w-5 h-5 text-brand-primary" />
+                <span className="w-5 h-5 flex items-center justify-center font-bold text-brand-primary">₹</span>
               </div>
             </div>
             <p className="text-xs text-brand-success font-bold mt-4">

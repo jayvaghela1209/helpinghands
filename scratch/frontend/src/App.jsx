@@ -23,6 +23,7 @@ import AttendanceView from './pages/AttendanceView';
 import CSRFunding from './pages/CSRFunding';
 import RequirementSponsorship from './pages/RequirementSponsorship';
 import AdminDashboard from './pages/AdminDashboard';
+import CSRReport from './pages/CSRReport';
 
 function App() {
   return (
@@ -61,6 +62,7 @@ function App() {
               <Route path="/csr-funding" element={<CSRFunding />} />
               <Route path="/sponsor-requirement" element={<RequirementSponsorship />} />
               <Route path="/browse-ngos" element={<BrowseNgos />} />
+              <Route path="/csr-report" element={<CSRReport />} />
             </Route>
             
             {/* Protected Admin Routes */}

@@ -40,6 +40,8 @@ class UserResponse(BaseModel):
     phone: Optional[str]
     city: Optional[str]
     created_at: datetime
+    organization_name: Optional[str] = None
+    company_name: Optional[str] = None
 
     class Config:
         from_attributes = True

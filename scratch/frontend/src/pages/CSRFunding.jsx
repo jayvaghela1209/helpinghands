@@ -149,7 +149,7 @@ const CSRFunding = () => {
         {/* Funding Amount Field */}
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1" htmlFor="amount">
-            Funding Amount ($) <span className="text-red-500">*</span>
+            Funding Amount (₹) <span className="text-red-500">*</span>
           </label>
           <input
             id="amount"

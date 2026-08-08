@@ -16,7 +16,7 @@ const ALLOWED_FOCUS_AREAS = [
 
 export const NgoOnboarding = () => {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, fetchProfile } = useAuth();
 
   const [organizationName, setOrganizationName] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
@@ -122,6 +122,12 @@ export const NgoOnboarding = () => {
 
       setSuccessMsg(isEditMode ? 'NGO Profile updated successfully!' : 'NGO Onboarding complete! Profile submitted.');
       setIsEditMode(true);
+
+      // Refresh AuthContext profile so navbar updates immediately with organization name
+      if (fetchProfile && token) {
+        await fetchProfile(token);
+      }
+
       setTimeout(() => {
         navigate('/ngo-dashboard');
       }, 1200);

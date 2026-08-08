@@ -10,6 +10,12 @@ export const CorporateDashboard = () => {
   const [pledges, setPledges] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // CSR Report State
+  const [reportYear, setReportYear] = useState('2026');
+  const [reportData, setReportData] = useState(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [reportError, setReportError] = useState('');
+
   // Helper: get auth token from localStorage
   const getToken = () => {
     const directToken = localStorage.getItem('authToken');
@@ -19,6 +25,37 @@ export const CorporateDashboard = () => {
       return session?.access_token || '';
     } catch (e) {
       return '';
+    }
+  };
+
+  // Handle CSR Report generation API call
+  const handleGenerateReport = async (e) => {
+    e.preventDefault();
+    setGeneratingReport(true);
+    setReportError('');
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const token = getToken();
+      const res = await fetch(`${apiUrl}/api/csr/reports/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ report_year: parseInt(reportYear, 10) }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to generate report');
+      }
+
+      const data = await res.json();
+      setReportData(data);
+    } catch (err) {
+      setReportError(err.message || 'Error generating CSR report.');
+    } finally {
+      setGeneratingReport(false);
     }
   };
 
@@ -218,7 +255,7 @@ export const CorporateDashboard = () => {
 
           </div>
 
-          {/* Sidebar Right: Corp Details */}
+          {/* Sidebar Right: Corp Details & CSR Report Generator */}
           <div className="space-y-6">
             <div className="bg-white border border-brand-border rounded-md p-6">
               <h2 className="text-sm font-bold text-brand-dark uppercase border-b border-brand-border pb-3 mb-4">Corporate Info</h2>
@@ -238,6 +275,86 @@ export const CorporateDashboard = () => {
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* CSR Report Generator Card */}
+            <div className="bg-white border border-brand-border rounded-md p-6">
+              <h2 className="text-sm font-bold text-brand-dark uppercase border-b border-brand-border pb-3 mb-4">
+                Generate CSR Report
+              </h2>
+              
+              <form onSubmit={handleGenerateReport} className="space-y-4">
+                {/* Year selection dropdown */}
+                <div>
+                  <label htmlFor="report-year" className="block text-xs font-semibold uppercase text-gray-500 mb-1">
+                    Select Report Year
+                  </label>
+                  <select
+                    id="report-year"
+                    value={reportYear}
+                    onChange={(e) => setReportYear(e.target.value)}
+                    className="w-full border border-brand-border rounded px-3 py-2 text-xs font-medium text-brand-dark bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  >
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                    <option value="2023">2023</option>
+                  </select>
+                </div>
+
+                {/* Generate report button */}
+                <button
+                  type="submit"
+                  disabled={generatingReport}
+                  className="w-full bg-brand-primary hover:bg-opacity-90 text-white font-bold text-xs py-2.5 px-4 rounded transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {generatingReport ? 'Generating Report...' : 'Generate Report'}
+                </button>
+              </form>
+
+              {/* Error message */}
+              {reportError && (
+                <div className="mt-4 p-3 bg-red-50 border border-brand-error text-brand-error text-xs rounded-md">
+                  {reportError}
+                </div>
+              )}
+
+              {/* Results displayed inside a simple table */}
+              {reportData && (
+                <div className="mt-6 pt-4 border-t border-brand-border">
+                  <h3 className="text-xs font-bold text-brand-dark uppercase mb-3">
+                    CSR Report Summary ({reportData.report_year})
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse border border-brand-border text-xs">
+                      <thead>
+                        <tr className="bg-brand-secondary border-b border-brand-border">
+                          <th className="p-2 font-bold text-brand-dark border-r border-brand-border">Metric</th>
+                          <th className="p-2 font-bold text-brand-dark">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-brand-border">
+                        <tr>
+                          <td className="p-2 text-gray-600 font-medium border-r border-brand-border">Total Funding</td>
+                          <td className="p-2 font-bold text-green-700">₹{Number(reportData.total_funding).toLocaleString('en-IN')}</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 text-gray-600 font-medium border-r border-brand-border">Employee Volunteer Hours</td>
+                          <td className="p-2 font-bold text-brand-dark">{reportData.employee_volunteer_hours} hrs</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 text-gray-600 font-medium border-r border-brand-border">NGOs Supported</td>
+                          <td className="p-2 font-bold text-brand-dark">{reportData.ngos_supported}</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 text-gray-600 font-medium border-r border-brand-border">Sponsored Requirements</td>
+                          <td className="p-2 font-bold text-brand-dark">{reportData.sponsored_requirements}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

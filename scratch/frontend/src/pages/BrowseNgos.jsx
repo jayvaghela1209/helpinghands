@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Search, Star, X, Building, MapPin, Mail, Award, Shield, FileText, Calendar, Users, DollarSign } from 'lucide-react';
+import { Search, Star, X, Building, MapPin, Mail, Award, Shield, FileText, Calendar, Users } from 'lucide-react';
 
 const BrowseNgos = () => {
   const navigate = useNavigate();
@@ -334,7 +334,7 @@ const BrowseNgos = () => {
                             onClick={() => navigate(`/csr-funding?ngo_id=${ngoDetails.profile.id}`)}
                             className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-md shadow-xs text-xs flex items-center space-x-1.5 transition-colors cursor-pointer"
                           >
-                            <DollarSign className="w-4 h-4" />
+                            <span className="w-4 h-4 flex items-center justify-center font-bold">₹</span>
                             <span>CSR Pledge</span>
                           </button>
                         </div>
@@ -478,7 +478,7 @@ const BrowseNgos = () => {
                     <div>
                       <div className="flex items-center justify-between border-b border-brand-border pb-2 mb-4">
                         <h3 className="text-sm font-bold text-brand-dark uppercase tracking-wider flex items-center space-x-2">
-                          <DollarSign className="w-4 h-4 text-brand-primary" />
+                          <span className="w-4 h-4 flex items-center justify-center font-bold text-brand-primary">₹</span>
                           <span>CSR Pledges ({ngoDetails.pledges ? ngoDetails.pledges.length : 0})</span>
                         </h3>
                       </div>
@@ -498,7 +498,7 @@ const BrowseNgos = () => {
                                 <h4 className="font-bold text-brand-dark text-sm">{pledge.corporate_name || 'Corporate Partner'}</h4>
                                 <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
                                   <span className="font-semibold text-green-700">
-                                    ${Number(pledge.pledged_amount).toLocaleString()}
+                                    ₹{Number(pledge.pledged_amount).toLocaleString('en-IN')}
                                   </span>
                                   <span>{pledge.pledged_hours || 0} Volunteer Hours</span>
                                   <span className="text-[11px] text-gray-400 font-mono">

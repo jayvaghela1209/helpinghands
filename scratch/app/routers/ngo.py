@@ -98,9 +98,10 @@ async def create_or_update_ngo_profile(
             res_dict["has_profile"] = True
             return res_dict
         else:
+            # Auto-approve NGOs so they appear in Browse NGOs immediately
             insert_query = text("""
                 INSERT INTO ngo_profiles (user_id, organization_name, registration_number, pan_number, darpan_id, focus_areas, verification_status)
-                VALUES (:user_id, :organization_name, :registration_number, :pan_number, :darpan_id, :focus_areas, 'pending')
+                VALUES (:user_id, :organization_name, :registration_number, :pan_number, :darpan_id, :focus_areas, 'approved')
                 RETURNING *
             """)
             inserted = await db.execute(insert_query, {
