@@ -12,7 +12,7 @@ from app.schemas.auth import UserRole
 
 router = APIRouter(prefix="/api/requirements", tags=["Requirements"])
 
-DEFAULT_ATTENDANCE_RADIUS = 5000.0
+DEFAULT_ATTENDANCE_RADIUS = 100000.0
 
 class RequirementCreate(BaseModel):
     title: str = Field(..., max_length=200)
@@ -22,8 +22,8 @@ class RequirementCreate(BaseModel):
     seats_total: int = Field(..., gt=0)
     event_date: date
     location_name: str = Field(..., max_length=255)
-    event_latitude: float
-    event_longitude: float
+    event_latitude: float = Field(..., ge=-90.0, le=90.0)
+    event_longitude: float = Field(..., ge=-180.0, le=180.0)
     attendance_radius: Optional[float] = DEFAULT_ATTENDANCE_RADIUS
     is_urgent: bool = False
 

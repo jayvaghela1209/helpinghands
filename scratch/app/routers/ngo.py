@@ -34,7 +34,9 @@ async def get_ngo_profile(
     current_user = Depends(require_role([UserRole.ngo]))
 ):
     query = text("""
-        SELECT p.*, u.name as user_name, u.email as user_email
+        SELECT p.*, u.name as user_name, u.email as user_email,
+               (SELECT ROUND(AVG(rating)::numeric, 1) FROM ngo_reviews WHERE ngo_profile_id = p.id) AS avg_rating,
+               (SELECT COUNT(*) FROM ngo_reviews WHERE ngo_profile_id = p.id) AS rating_count
         FROM ngo_profiles p
         JOIN users u ON p.user_id = u.id
         WHERE p.user_id = :user_id
@@ -48,7 +50,7 @@ async def get_ngo_profile(
             "user_name": current_user["name"],
             "user_email": current_user["email"]
         }
-    
+
     res_dict = dict(prof)
     res_dict["has_profile"] = True
     return res_dict

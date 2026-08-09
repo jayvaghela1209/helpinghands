@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Attendance"])
 
-# TODO: Change CHECKIN_RADIUS_METERS to 200 before production deployment.
-CHECKIN_RADIUS_METERS = 100000
-
 class CheckinRequest(BaseModel):
     latitude: float
     longitude: float
@@ -61,33 +58,36 @@ async def checkin(
             detail="You must be an accepted volunteer to check in to this event"
         )
 
-    # Fetch requirement location details
-    req_query = text("SELECT event_latitude, event_longitude, title FROM requirements WHERE id = :id")
+    # Fetch requirement location and per-requirement attendance radius
+    req_query = text("SELECT event_latitude, event_longitude, attendance_radius, title FROM requirements WHERE id = :id")
     req_res = await db.execute(req_query, {"id": id})
     req = req_res.mappings().first()
-    
+
     if not req or req["event_latitude"] is None or req["event_longitude"] is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This event does not have valid coordinates for geo-verification"
         )
 
+    # Use the radius stored in this specific requirement; fall back to 100000m if NULL
+    allowed_radius = float(req["attendance_radius"] or 100000.0)
+
     distance = calculate_haversine_distance(
         request.latitude, request.longitude,
         float(req["event_latitude"]), float(req["event_longitude"])
     )
 
-    # Diagnostic log — remove or reduce log level before production
+    # Diagnostic log — logs the actual per-requirement radius from the database
     logger.info(
         "Checkin attempt | volunteer=(%.6f, %.6f) event=(%.6f, %.6f) "
-        "radius=%.1fm distance=%.2fm",
+        "allowed_radius=%.1fm distance=%.2fm",
         request.latitude, request.longitude,
         float(req["event_latitude"]), float(req["event_longitude"]),
-        CHECKIN_RADIUS_METERS, distance
+        allowed_radius, distance
     )
 
-    # Compare distance against configurable radius
-    present = distance <= CHECKIN_RADIUS_METERS
+    # Compare distance against this requirement's stored radius
+    present = distance <= allowed_radius
 
     if not present:
         raise HTTPException(
@@ -95,7 +95,7 @@ async def checkin(
             detail={
                 "detail": "You're too far from the event location",
                 "distance": round(distance, 2),
-                "allowed_radius": CHECKIN_RADIUS_METERS,
+                "allowed_radius": allowed_radius,
             }
         )
 
@@ -153,7 +153,7 @@ async def checkin(
             "success": True,
             "message": "Checked in successfully!",
             "distance": round(distance, 1),
-            "allowed_radius": CHECKIN_RADIUS_METERS,
+            "allowed_radius": allowed_radius,
             "hours_rewarded": HOURS_EARNED,
             "points_rewarded": POINTS_EARNED
         }
@@ -183,7 +183,8 @@ async def get_attendance(
         raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to view this data")
 
     query = text("""
-        SELECT att.id, att.status, att.checkin_time, att.checkin_distance_meters, u.name, u.email
+        SELECT att.id, att.status, att.checkin_time, att.checkout_time,
+               att.checkin_distance_meters, u.name, u.email
         FROM attendance att
         JOIN volunteer_profiles vp ON att.volunteer_profile_id = vp.id
         JOIN users u ON vp.user_id = u.id

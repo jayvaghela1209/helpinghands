@@ -139,6 +139,11 @@ export const PostRequirement = () => {
 
   const [loading, setLoading] = useState(false);
   const [locationConfirmed, setLocationConfirmed] = useState(false);
+  // 'search' | 'manual'  — which mode produced the confirmed coordinates
+  const [locationMode, setLocationMode] = useState('search');
+  // Manual entry fields (kept separate so they don't stomp Geoapify state)
+  const [manualLat, setManualLat] = useState('');
+  const [manualLon, setManualLon] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -147,12 +152,62 @@ export const PostRequirement = () => {
     setLatitude(String(lat));
     setLongitude(String(lon));
     setLocationConfirmed(true);
+    setLocationMode('search');
     setErrorMsg('');
   };
 
   const handleLocationChange = (val) => {
     setLocationName(val);
-    if (locationConfirmed) {
+    // Typing in the search box clears any previously confirmed search result
+    if (locationConfirmed && locationMode === 'search') {
+      setLocationConfirmed(false);
+      setLatitude('');
+      setLongitude('');
+    }
+  };
+
+  // Validate and confirm manual coordinates
+  const handleManualConfirm = () => {
+    const lat = parseFloat(manualLat);
+    const lon = parseFloat(manualLon);
+
+    if (manualLat.trim() === '' || manualLon.trim() === '') {
+      setErrorMsg('Both latitude and longitude are required for manual entry.');
+      return;
+    }
+    if (isNaN(lat) || isNaN(lon)) {
+      setErrorMsg('Latitude and longitude must be valid numbers.');
+      return;
+    }
+    if (lat < -90 || lat > 90) {
+      setErrorMsg('Latitude must be between -90 and 90.');
+      return;
+    }
+    if (lon < -180 || lon > 180) {
+      setErrorMsg('Longitude must be between -180 and 180.');
+      return;
+    }
+
+    setLatitude(String(lat));
+    setLongitude(String(lon));
+    setLocationConfirmed(true);
+    setLocationMode('manual');
+    setErrorMsg('');
+  };
+
+  // Clearing manual fields also clears confirmation if manual was authoritative
+  const handleManualLatChange = (val) => {
+    setManualLat(val);
+    if (locationConfirmed && locationMode === 'manual') {
+      setLocationConfirmed(false);
+      setLatitude('');
+      setLongitude('');
+    }
+  };
+
+  const handleManualLonChange = (val) => {
+    setManualLon(val);
+    if (locationConfirmed && locationMode === 'manual') {
       setLocationConfirmed(false);
       setLatitude('');
       setLongitude('');
@@ -165,7 +220,7 @@ export const PostRequirement = () => {
     setSuccessMsg('');
 
     if (!latitude || !longitude) {
-      setErrorMsg('Please select a location from the suggestions to capture coordinates.');
+      setErrorMsg('Please select a location from the suggestions or enter valid latitude and longitude coordinates.');
       return;
     }
 
@@ -326,6 +381,7 @@ export const PostRequirement = () => {
                 Event Location (For Attendance)
               </label>
 
+              {/* ── Mode 1: Geoapify search ── */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                   Location Name
@@ -337,11 +393,61 @@ export const PostRequirement = () => {
                 />
               </div>
 
+              {/* ── Divider ── */}
+              <div className="flex items-center my-4">
+                <div className="flex-1 border-t border-brand-border" />
+                <span className="mx-3 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                  Or Enter Coordinates Manually
+                </span>
+                <div className="flex-1 border-t border-brand-border" />
+              </div>
+
+              {/* ── Mode 2: Manual lat/lon ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    Latitude <span className="text-gray-400 font-normal">(−90 to 90)</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={manualLat}
+                    onChange={(e) => handleManualLatChange(e.target.value)}
+                    placeholder="e.g. 23.0540"
+                    className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    Longitude <span className="text-gray-400 font-normal">(−180 to 180)</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={manualLon}
+                    onChange={(e) => handleManualLonChange(e.target.value)}
+                    placeholder="e.g. 72.5474"
+                    className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleManualConfirm}
+                disabled={!manualLat.trim() || !manualLon.trim()}
+                className="mt-3 text-xs font-bold px-4 py-2 border border-brand-border bg-brand-secondary text-brand-primary hover:bg-gray-100 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Confirm Manual Coordinates
+              </button>
+
+              {/* ── Confirmed coordinates display ── */}
               {locationConfirmed && latitude && longitude && (
-                <div className="mt-2 flex items-center space-x-2 text-xs text-brand-success">
+                <div className="mt-3 flex items-center space-x-2 text-xs text-brand-success">
                   <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
                   <span>
-                    Location confirmed: {parseFloat(latitude).toFixed(4)}, {parseFloat(longitude).toFixed(4)}
+                    Location confirmed
+                    {locationMode === 'manual' ? ' (manual)' : ''}:{' '}
+                    {parseFloat(latitude).toFixed(7)}, {parseFloat(longitude).toFixed(7)}
                   </span>
                 </div>
               )}

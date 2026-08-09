@@ -53,6 +53,14 @@ export const NgoDashboard = () => {
 
   const orgName = ngoProfile?.has_profile ? ngoProfile.organization_name : (profile?.name || 'NGO Partner');
   const verificationStatus = ngoProfile?.has_profile ? ngoProfile.verification_status : 'pending';
+  const avgRating = ngoProfile?.avg_rating ? parseFloat(ngoProfile.avg_rating) : null;
+  const ratingCount = ngoProfile?.rating_count ? parseInt(ngoProfile.rating_count, 10) : 0;
+
+  // Build star string: filled stars + empty stars
+  const renderStars = (rating) => {
+    const filled = Math.round(rating);
+    return '★'.repeat(filled) + '☆'.repeat(5 - filled);
+  };
 
   return (
     <div className="min-h-screen bg-brand-secondary">
@@ -135,13 +143,26 @@ export const NgoDashboard = () => {
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase">Trust Rating</p>
-                <p className="text-2xl font-bold text-brand-dark mt-2">No ratings yet</p>
+                {avgRating !== null ? (
+                  <>
+                    <p className="text-xl font-bold text-brand-dark mt-2">
+                      <span className="text-yellow-500 tracking-wider">{renderStars(avgRating)}</span>{' '}
+                      {avgRating.toFixed(1)} / 5
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-lg font-bold text-gray-400 mt-2">No ratings yet</p>
+                )}
               </div>
               <div className="p-2 bg-brand-secondary border border-brand-border rounded-md">
                 <Star className="w-5 h-5 text-yellow-500" />
               </div>
             </div>
-            <p className="text-xs text-gray-400 mt-4">Ratings appear after verified events</p>
+            <p className="text-xs text-gray-400 mt-4">
+              {ratingCount > 0
+                ? `Based on ${ratingCount} volunteer rating${ratingCount === 1 ? '' : 's'}`
+                : 'Ratings appear after verified events'}
+            </p>
           </div>
 
         </div>

@@ -119,7 +119,7 @@ export const AttendanceView = () => {
                   <tr className="bg-gray-50 border-b border-brand-border">
                     <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Volunteer</th>
                     <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Check-in Time</th>
-                    <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Distance</th>
+                    <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Check-out Time</th>
                     <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
@@ -149,9 +149,10 @@ export const AttendanceView = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-gray-600">
-                          {att.checkin_distance_meters != null
-                            ? `${Math.round(att.checkin_distance_meters)} m`
-                            : '—'}
+                          <div className="flex items-center space-x-1.5">
+                            <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span>{att.checkout_time ? new Date(att.checkout_time).toLocaleString() : '—'}</span>
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-sm ${styleClass}`}>

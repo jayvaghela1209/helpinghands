@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { UserCheck, UserX, CheckCircle, AlertCircle, MapPin, Clock } from 'lucide-react';
+import { UserCheck, UserX, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 
 export const VerifyAttendance = () => {
   const { reqId } = useParams();
@@ -247,13 +247,13 @@ export const VerifyAttendance = () => {
                     <div key={att.id} className="p-6 flex justify-between items-start">
                       <div>
                         <p className="text-sm font-bold text-brand-dark">{att.name}</p>
-                        <p className="text-xs text-gray-500 mt-1 flex items-center">
-                          <MapPin className="w-3 h-3 text-gray-400 mr-1" />
-                          Distance: {att.checkin_distance_meters != null ? `${Math.round(att.checkin_distance_meters)}m` : 'N/A'}
-                        </p>
                         <p className="text-xs text-gray-400 mt-1 flex items-center">
                           <Clock className="w-3 h-3 text-gray-400 mr-1" />
                           Checked In: {att.checkin_time ? new Date(att.checkin_time).toLocaleTimeString() : 'N/A'}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1 flex items-center">
+                          <Clock className="w-3 h-3 text-gray-400 mr-1" />
+                          Checked Out: {att.checkout_time ? new Date(att.checkout_time).toLocaleTimeString() : '—'}
                         </p>
                       </div>
 
