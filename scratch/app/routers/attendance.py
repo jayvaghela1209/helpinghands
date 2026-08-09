@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Attendance"])
 
 # TODO: Change CHECKIN_RADIUS_METERS to 200 before production deployment.
-CHECKIN_RADIUS_METERS = 3000
+CHECKIN_RADIUS_METERS = 100000
 
 class CheckinRequest(BaseModel):
     latitude: float
