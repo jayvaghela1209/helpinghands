@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 export const Signup = () => {
   const [role, setRole] = useState('volunteer'); // volunteer, ngo, corporate
@@ -28,8 +28,28 @@ export const Signup = () => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  
+
+  // Canonical focus-area list fetched from backend
+  const [allowedFocusAreas, setAllowedFocusAreas] = useState([]);
+  // NGO: selected focus areas (array, not comma string)
+  const [selectedNgoFocusAreas, setSelectedNgoFocusAreas] = useState([]);
+
   const navigate = useNavigate();
+
+  // Fetch canonical focus-area list as soon as the signup page loads
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    fetch(`${apiUrl}/api/ngo/focus-areas`)
+      .then(r => r.json())
+      .then(d => setAllowedFocusAreas(Array.isArray(d.focus_areas) ? d.focus_areas : []))
+      .catch(() => {});
+  }, []);
+
+  const toggleNgoFocusArea = (area) => {
+    setSelectedNgoFocusAreas(prev =>
+      prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]
+    );
+  };
   
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -59,9 +79,8 @@ export const Signup = () => {
       signupData.registration_number = registrationNo || null; // correct key
       signupData.darpan_id = darpanId || null;
       signupData.pan_number = panNumber || null;
-      signupData.focus_areas = focusAreas
-        ? focusAreas.split(',').map(tag => tag.trim()).filter(Boolean)
-        : [];
+      // Use the validated selection — only values from the canonical backend list
+      signupData.focus_areas = selectedNgoFocusAreas;
     } else if (role === 'corporate') {
       signupData.name = companyName;          // backend `name` field (required)
       signupData.company_name = companyName;  // backend corporate profile field
@@ -319,17 +338,29 @@ export const Signup = () => {
                   </div>
                 </div>
                 <div>
-                  <label htmlFor="focusAreas" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Focus Areas (Comma separated tags)
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Focus Areas
                   </label>
-                  <input
-                    id="focusAreas"
-                    type="text"
-                    value={focusAreas}
-                    onChange={e => setFocusAreas(e.target.value)}
-                    className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                    placeholder="e.g. education, environment, health"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {allowedFocusAreas.map(area => {
+                      const isSelected = selectedNgoFocusAreas.includes(area);
+                      return (
+                        <button
+                          key={area}
+                          type="button"
+                          onClick={() => toggleNgoFocusArea(area)}
+                          className={`px-3 py-2 text-xs font-medium rounded-md border text-left flex items-center justify-between transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-brand-primary text-white border-brand-primary'
+                              : 'bg-white text-gray-700 border-brand-border hover:bg-gray-50'
+                          }`}
+                        >
+                          <span>{area}</span>
+                          {isSelected && <ShieldCheck className="w-3.5 h-3.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}

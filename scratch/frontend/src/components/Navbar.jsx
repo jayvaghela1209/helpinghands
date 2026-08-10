@@ -4,13 +4,18 @@ import { useAuth } from '../context/AuthContext';
 import { LogOut, User, Activity, Award, Briefcase, Shield } from 'lucide-react';
 
 export const Navbar = () => {
-  const { profile, logout } = useAuth();
+  const { profile, ngoProfile, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
+
+  // Display name: NGO users show their organization name; all others show profile.name
+  const displayName = profile?.role === 'ngo' && ngoProfile?.organization_name
+    ? ngoProfile.organization_name
+    : profile?.name;
 
   return (
     <header className="bg-white border-b border-brand-border sticky top-0 z-50">
@@ -75,7 +80,7 @@ export const Navbar = () => {
           {profile ? (
             <>
               <div className="text-right">
-                <p className="text-xs font-semibold text-brand-dark">{profile.name}</p>
+                <p className="text-xs font-semibold text-brand-dark">{displayName}</p>
                 <p className="text-[10px] text-gray-500 font-mono flex items-center justify-end space-x-1 mt-0.5">
                   {profile.role === 'volunteer' && <Activity className="w-3 h-3 text-brand-accent inline" />}
                   {profile.role === 'ngo' && <Award className="w-3 h-3 text-brand-primary inline" />}

@@ -28,6 +28,11 @@ class NgoProfileCreateUpdate(BaseModel):
     darpan_id: Optional[str] = Field(None, max_length=100)
     focus_areas: List[str] = []
 
+@router.get("/focus-areas")
+async def get_focus_areas():
+    """Return the canonical list of allowed NGO focus areas."""
+    return {"focus_areas": ALLOWED_FOCUS_AREAS}
+
 @router.get("/profile")
 async def get_ngo_profile(
     db: AsyncSession = Depends(get_db),
