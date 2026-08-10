@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { UserCheck, UserX, CheckCircle, AlertCircle, MapPin, Clock } from 'lucide-react';
+import { UserCheck, UserX, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 
 export const VerifyAttendance = () => {
   const { reqId } = useParams();
@@ -129,7 +129,7 @@ export const VerifyAttendance = () => {
   return (
     <div className="min-h-screen bg-brand-secondary">
       <main className="max-w-7xl mx-auto px-6 py-8">
-        
+
         {/* Header */}
         <div className="mb-8 flex justify-between items-start">
           <div>
@@ -164,7 +164,7 @@ export const VerifyAttendance = () => {
 
         {/* Details and Lists Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
+
           {/* Column 1: Applications & Approvals */}
           <div className="space-y-6">
             <div className="bg-white border border-brand-border rounded-md">
@@ -212,11 +212,10 @@ export const VerifyAttendance = () => {
                             </button>
                           </>
                         ) : (
-                          <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-sm ${
-                            app.status === 'accepted'
+                          <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-sm ${app.status === 'accepted'
                               ? 'bg-green-50 border-brand-success text-brand-success'
                               : 'bg-red-50 border-brand-error text-brand-error'
-                          }`}>
+                            }`}>
                             {app.status}
                           </span>
                         )}
@@ -234,7 +233,7 @@ export const VerifyAttendance = () => {
               <div className="px-6 py-4 border-b border-brand-border flex justify-between items-center">
                 <h2 className="text-xs font-bold text-brand-dark uppercase tracking-wider">Checked-In Attendance Logs</h2>
                 <span className="text-xs text-brand-success font-mono font-bold">
-                  {attendance.filter(a => a.present).length} Present
+                  {attendance.filter(a => a.status === 'verified' || a.status === 'checked_in').length} Present
                 </span>
               </div>
 
@@ -248,20 +247,20 @@ export const VerifyAttendance = () => {
                     <div key={att.id} className="p-6 flex justify-between items-start">
                       <div>
                         <p className="text-sm font-bold text-brand-dark">{att.name}</p>
-                        <p className="text-xs text-gray-500 mt-1 flex items-center">
-                          <MapPin className="w-3 h-3 text-gray-400 mr-1" />
-                          Distance: {att.distance_meters ? `${Math.round(att.distance_meters)}m` : 'N/A'}
+                        <p className="text-xs text-gray-400 mt-1 flex items-center">
+                          <Clock className="w-3 h-3 text-gray-400 mr-1" />
+                          Checked In: {att.checkin_time ? new Date(att.checkin_time).toLocaleTimeString() : 'N/A'}
                         </p>
                         <p className="text-xs text-gray-400 mt-1 flex items-center">
                           <Clock className="w-3 h-3 text-gray-400 mr-1" />
-                          Checked In: {att.checked_in_at ? new Date(att.checked_in_at).toLocaleTimeString() : 'N/A'}
+                          Checked Out: {att.checkout_time ? new Date(att.checkout_time).toLocaleTimeString() : '—'}
                         </p>
                       </div>
 
                       <div className="flex items-center space-x-2">
-                        {att.present ? (
+                        {att.status === 'verified' ? (
                           <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border border-brand-success text-brand-success bg-green-50 rounded-sm">
-                            ✓ Present
+                            ✓ Verified
                           </span>
                         ) : (
                           <button

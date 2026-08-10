@@ -95,7 +95,14 @@ export const AttendanceView = () => {
         <div className="bg-white border border-brand-border rounded-md shadow-sm">
           <div className="px-6 py-4 border-b border-brand-border flex justify-between items-center bg-gray-50">
             <h2 className="text-xs font-bold text-brand-dark uppercase tracking-wider">Attendance Records</h2>
-            <span className="text-[11px] text-gray-500">{attendance.length} records</span>
+            <span className="text-[11px] text-gray-500">
+              {attendance.length} records
+              {attendance.length > 0 && (
+                <span className="ml-2 text-brand-success font-semibold">
+                  · {attendance.filter(a => a.status === 'verified').length} verified
+                </span>
+              )}
+            </span>
           </div>
 
           {loading ? (
@@ -106,31 +113,57 @@ export const AttendanceView = () => {
           ) : attendance.length === 0 ? (
             <div className="p-12 text-center text-xs text-gray-500">No attendance records yet.</div>
           ) : (
-            <div className="divide-y divide-brand-border">
-              {attendance.map(att => (
-                <div key={att.id} className="p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <Users className="w-4 h-4 text-brand-primary" />
-                      <span className="font-medium text-brand-dark">{att.name}</span>
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Check‑in: {att.checked_in_at ? new Date(att.checked_in_at).toLocaleString() : 'N/A'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Check‑out: {att.checked_out_at ? new Date(att.checked_out_at).toLocaleString() : 'N/A'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Worked Hours: {att.worked_hours != null ? att.worked_hours : 'N/A'}
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-sm ${att.present ? 'bg-green-50 border-brand-success text-brand-success' : 'bg-red-50 border-brand-error text-brand-error'}`}>
-                      {att.present ? 'Present' : 'Absent'}
-                    </span>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-brand-border">
+                    <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Volunteer</th>
+                    <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Check-in Time</th>
+                    <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Check-out Time</th>
+                    <th className="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-brand-border">
+                  {attendance.map(att => {
+                    const statusStyles = {
+                      verified: 'bg-green-50 border border-brand-success text-brand-success',
+                      checked_in: 'bg-blue-50 border border-blue-400 text-blue-600',
+                    };
+                    const styleClass = statusStyles[att.status] || 'bg-gray-50 border border-gray-300 text-gray-500';
+
+                    return (
+                      <tr key={att.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center space-x-2">
+                            <Users className="w-4 h-4 text-brand-primary flex-shrink-0" />
+                            <div>
+                              <p className="font-semibold text-brand-dark">{att.name}</p>
+                              <p className="text-gray-400 font-mono text-[10px]">{att.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-gray-600">
+                          <div className="flex items-center space-x-1.5">
+                            <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span>{att.checkin_time ? new Date(att.checkin_time).toLocaleString() : '—'}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-gray-600">
+                          <div className="flex items-center space-x-1.5">
+                            <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span>{att.checkout_time ? new Date(att.checkout_time).toLocaleString() : '—'}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-sm ${styleClass}`}>
+                            {att.status === 'checked_in' ? 'Checked In' : att.status || '—'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

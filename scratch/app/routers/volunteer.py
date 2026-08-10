@@ -16,7 +16,7 @@ async def get_volunteer_profile(current_user = Depends(get_current_user), db: As
 
     query = text(
         """
-        SELECT u.name, u.phone, u.city, vp.skill_tags, vp.total_hours, vp.credit_points, vp.trust_score
+        SELECT u.name, u.email, u.phone, u.city, vp.skill_tags, vp.total_hours, vp.credit_points, vp.trust_score
         FROM users u
         JOIN volunteer_profiles vp ON u.id = vp.user_id
         WHERE u.id = :user_id
