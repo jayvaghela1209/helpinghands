@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Award, Clock, Star, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
+import { formatWorkedHours } from '../lib/format';
 
 export const VolunteerDashboard = () => {
   const { profile } = useAuth();
@@ -118,7 +119,7 @@ export const VolunteerDashboard = () => {
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase">Verified Hours</p>
-                  <p className="text-2xl font-bold text-brand-dark mt-2">{volProfile.total_hours} hrs</p>
+                  <p className="text-2xl font-bold text-brand-dark mt-2">{formatWorkedHours(volProfile.total_hours)}</p>
                 </div>
                 <div className="p-2 bg-brand-secondary border border-brand-border rounded-md">
                   <Clock className="w-5 h-5 text-brand-primary" />
@@ -179,6 +180,7 @@ export const VolunteerDashboard = () => {
                 <h2 className="text-sm font-bold text-brand-dark uppercase">My Applications</h2>
                 <div className="flex items-center space-x-3">
                   <span className="text-xs text-gray-400 font-mono">{applications?.length ?? 0} Total</span>
+                  <Link to="/volunteer/certificates" className="text-xs font-semibold text-brand-primary bg-purple-50 border border-purple-200 hover:bg-purple-100 px-3 py-1 rounded-md transition-all">My Certificates</Link>
                   <Link to="/browse-opportunities" className="text-xs font-semibold text-white bg-brand-primary hover:bg-opacity-90 px-3 py-1 rounded-md transition-all">Browse Opportunities</Link>
                 </div>
               </div>
@@ -206,7 +208,7 @@ export const VolunteerDashboard = () => {
           {/* Sidebar Right: Profile Details */}
           <div className="space-y-6">
             <div className="bg-white border border-brand-border rounded-md p-6">
-              <h2 className="text-sm font-bold text-brand-dark uppercase border-b border-brand-border pb-3 mb-4">Credentials</h2>
+              <h2 className="text-sm font-bold text-brand-dark uppercase border-b border-brand-border pb-3 mb-4">Profile</h2>
               {volProfile ? (
                 <form onSubmit={handleSubmit} className="space-y-4 text-xs">
                   <div>

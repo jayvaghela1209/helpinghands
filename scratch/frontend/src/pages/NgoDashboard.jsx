@@ -76,6 +76,14 @@ export const NgoDashboard = () => {
 
   const orgName = ngoProfile?.has_profile ? ngoProfile.organization_name : (profile?.name || 'NGO Partner');
   const verificationStatus = ngoProfile?.has_profile ? ngoProfile.verification_status : 'pending';
+  const avgRating = ngoProfile?.avg_rating ? parseFloat(ngoProfile.avg_rating) : null;
+  const ratingCount = ngoProfile?.rating_count ? parseInt(ngoProfile.rating_count, 10) : 0;
+
+  // Build star string: filled stars + empty stars
+  const renderStars = (rating) => {
+    const filled = Math.round(rating);
+    return '★'.repeat(filled) + '☆'.repeat(5 - filled);
+  };
 
   return (
     <div className="min-h-screen bg-brand-secondary">
@@ -174,13 +182,26 @@ export const NgoDashboard = () => {
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase">Trust Rating</p>
-                <p className="text-2xl font-bold text-brand-dark mt-2">4.8 / 5.0</p>
+                {avgRating !== null ? (
+                  <>
+                    <p className="text-xl font-bold text-brand-dark mt-2">
+                      <span className="text-yellow-500 tracking-wider">{renderStars(avgRating)}</span>{' '}
+                      {avgRating.toFixed(1)} / 5
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-lg font-bold text-gray-400 mt-2">No ratings yet</p>
+                )}
               </div>
               <div className="p-2 bg-brand-secondary border border-brand-border rounded-md">
-                <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                <Star className="w-5 h-5 text-yellow-500" />
               </div>
             </div>
-            <p className="text-xs text-gray-400 mt-4">Based on volunteer feedback</p>
+            <p className="text-xs text-gray-400 mt-4">
+              {ratingCount > 0
+                ? `Based on ${ratingCount} volunteer rating${ratingCount === 1 ? '' : 's'}`
+                : 'Ratings appear after verified events'}
+            </p>
           </div>
 
         </div>
@@ -224,11 +245,10 @@ export const NgoDashboard = () => {
                       <div className="space-y-1.5">
                         <div className="flex items-center space-x-2">
                           <h3 className="text-sm font-bold text-brand-dark">{req.title}</h3>
-                          <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-sm ${
-                            req.status === 'open' 
-                              ? 'bg-green-50 border-brand-success text-brand-success' 
+                          <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-sm ${req.status === 'open'
+                              ? 'bg-green-50 border-brand-success text-brand-success'
                               : 'bg-gray-50 border-gray-300 text-gray-500'
-                          }`}>
+                            }`}>
                             {req.status}
                           </span>
                         </div>
@@ -348,11 +368,10 @@ export const NgoDashboard = () => {
 
                 <div>
                   <span className="text-gray-400 block uppercase font-semibold">Verification Status</span>
-                  <span className={`inline-block mt-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-md ${
-                    verificationStatus === 'approved' || verificationStatus === 'verified'
+                  <span className={`inline-block mt-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-md ${verificationStatus === 'approved' || verificationStatus === 'verified'
                       ? 'border-brand-success text-brand-success bg-green-50'
                       : 'border-yellow-500 text-yellow-600 bg-yellow-50'
-                  }`}>
+                    }`}>
                     {verificationStatus}
                   </span>
                 </div>

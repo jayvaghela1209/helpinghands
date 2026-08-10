@@ -35,6 +35,18 @@ async function request(endpoint, options = {}) {
   }
 }
 
+function getAuthToken(token) {
+  if (token) return token;
+  const localAuthToken = localStorage.getItem('authToken');
+  if (localAuthToken) return localAuthToken;
+  try {
+    const session = JSON.parse(localStorage.getItem('hh_session') || 'null');
+    return session?.access_token || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export const api = {
   /**
    * Health check endpoint
@@ -48,8 +60,9 @@ export const api = {
    */
   async get(endpoint, token = null) {
     const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    const finalToken = getAuthToken(token);
+    if (finalToken) {
+      headers['Authorization'] = `Bearer ${finalToken}`;
     }
     return request(endpoint, { method: 'GET', headers });
   },
@@ -59,8 +72,9 @@ export const api = {
    */
   async post(endpoint, body, token = null) {
     const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    const finalToken = getAuthToken(token);
+    if (finalToken) {
+      headers['Authorization'] = `Bearer ${finalToken}`;
     }
     return request(endpoint, {
       method: 'POST',
@@ -74,8 +88,9 @@ export const api = {
    */
   async put(endpoint, body, token = null) {
     const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    const finalToken = getAuthToken(token);
+    if (finalToken) {
+      headers['Authorization'] = `Bearer ${finalToken}`;
     }
     return request(endpoint, {
       method: 'PUT',
@@ -89,8 +104,9 @@ export const api = {
    */
   async delete(endpoint, token = null) {
     const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    const finalToken = getAuthToken(token);
+    if (finalToken) {
+      headers['Authorization'] = `Bearer ${finalToken}`;
     }
     return request(endpoint, { method: 'DELETE', headers });
   }

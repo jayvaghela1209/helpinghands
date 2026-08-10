@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
+import re
 
 from app.db import get_db
 from app.routers.auth import require_role
@@ -23,10 +24,36 @@ ALLOWED_FOCUS_AREAS = [
 
 class NgoProfileCreateUpdate(BaseModel):
     organization_name: str = Field(..., max_length=200)
-    registration_number: str = Field(..., max_length=100)
-    pan_number: Optional[str] = Field(None, max_length=20)
-    darpan_id: Optional[str] = Field(None, max_length=100)
+    registration_number: Optional[str] = Field(None, max_length=9)
+    pan_number: Optional[str] = Field(None, max_length=10)
+    darpan_id: Optional[str] = Field(None, max_length=16)
     focus_areas: List[str] = []
+
+    @field_validator('registration_number')
+    @classmethod
+    def validate_registration_number(cls, v):
+        if v and not re.fullmatch(r'\d{1,9}', v):
+            raise ValueError('Registration number must contain maximum 9 numeric digits only.')
+        return v
+
+    @field_validator('darpan_id')
+    @classmethod
+    def validate_darpan_id(cls, v):
+        if v and (len(v) < 14 or len(v) > 16):
+            raise ValueError('NGO Darpan ID must be between 14 and 16 characters.')
+        return v
+
+    @field_validator('pan_number')
+    @classmethod
+    def validate_pan_number(cls, v):
+        if v and len(v) != 10:
+            raise ValueError('PAN number must be exactly 10 characters.')
+        return v
+
+@router.get("/focus-areas")
+async def get_focus_areas():
+    """Return the canonical list of allowed NGO focus areas."""
+    return {"focus_areas": ALLOWED_FOCUS_AREAS}
 
 @router.get("/profile")
 async def get_ngo_profile(
@@ -34,7 +61,9 @@ async def get_ngo_profile(
     current_user = Depends(require_role([UserRole.ngo]))
 ):
     query = text("""
-        SELECT p.*, u.name as user_name, u.email as user_email
+        SELECT p.*, u.name as user_name, u.email as user_email,
+               (SELECT ROUND(AVG(rating)::numeric, 1) FROM ngo_reviews WHERE ngo_profile_id = p.id) AS avg_rating,
+               (SELECT COUNT(*) FROM ngo_reviews WHERE ngo_profile_id = p.id) AS rating_count
         FROM ngo_profiles p
         JOIN users u ON p.user_id = u.id
         WHERE p.user_id = :user_id
@@ -48,7 +77,7 @@ async def get_ngo_profile(
             "user_name": current_user["name"],
             "user_email": current_user["email"]
         }
-    
+
     res_dict = dict(prof)
     res_dict["has_profile"] = True
     return res_dict

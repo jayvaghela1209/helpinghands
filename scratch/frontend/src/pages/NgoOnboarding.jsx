@@ -3,21 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Building2, CheckCircle, AlertCircle, ArrowLeft, ShieldCheck } from 'lucide-react';
 
-const ALLOWED_FOCUS_AREAS = [
-  'Education',
-  'Healthcare',
-  'Environment & Sustainability',
-  'Gender Equality',
-  'Rural Development',
-  'Poverty & Hunger',
-  'Disaster Relief',
-  'Skill Development'
-];
+// Focus areas are fetched from the backend — no hardcoded list here.
 
 export const NgoOnboarding = () => {
   const navigate = useNavigate();
-  const { profile, fetchProfile } = useAuth();
-
+  const { profile, refreshNgoProfile } = useAuth();
   const [organizationName, setOrganizationName] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [panNumber, setPanNumber] = useState('');
@@ -30,44 +20,84 @@ export const NgoOnboarding = () => {
   const [verificationStatus, setVerificationStatus] = useState('pending');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [allowedFocusAreas, setAllowedFocusAreas] = useState([]);
+
+  // Field-level validation errors
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const validateField = (fieldName, value) => {
+    switch (fieldName) {
+      case 'registrationNumber': {
+        if (value && !/^\d{1,9}$/.test(value.trim())) {
+          return 'Registration number must contain maximum 9 digits (numbers only).';
+        }
+        return '';
+      }
+      case 'panNumber': {
+        if (value && value.length !== 10) {
+          return 'PAN number must be 10 characters.';
+        }
+        return '';
+      }
+      case 'darpanId': {
+        if (value && (value.length < 14 || value.length > 16)) {
+          return 'NGO Darpan ID must be between 14 and 16 characters.';
+        }
+        return '';
+      }
+      default:
+        return '';
+    }
+  };
+
+  const handleFieldChange = (fieldName, value, setter) => {
+    setter(value);
+    const err = validateField(fieldName, value);
+    setFieldErrors(prev => ({ ...prev, [fieldName]: err }));
+  };
 
   useEffect(() => {
-    const fetchNgoProfile = async () => {
+    const init = async () => {
       setLoading(true);
       setErrorMsg('');
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const token = JSON.parse(localStorage.getItem('hh_session'))?.access_token;
+
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-        const token = JSON.parse(localStorage.getItem('hh_session'))?.access_token;
+        // 1. Fetch canonical focus-area list from the backend (single source of truth)
+        const faRes = await fetch(`${apiUrl}/api/ngo/focus-areas`);
+        const faData = await faRes.json();
+        const canonical = Array.isArray(faData.focus_areas) ? faData.focus_areas : [];
+        setAllowedFocusAreas(canonical);
 
-        const response = await fetch(`${apiUrl}/api/ngo/profile`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+        // 2. Fetch existing NGO profile (if any)
+        const profRes = await fetch(`${apiUrl}/api/ngo/profile`, {
+          headers: { 'Authorization': `Bearer ${token}` }
         });
-
-        if (response.ok) {
-          const data = await response.json();
+        if (profRes.ok) {
+          const data = await profRes.json();
           if (data.has_profile) {
             setIsEditMode(true);
             setOrganizationName(data.organization_name || '');
             setRegistrationNumber(data.registration_number || '');
             setPanNumber(data.pan_number || '');
             setDarpanId(data.darpan_id || '');
-            setSelectedFocusAreas(Array.isArray(data.focus_areas) ? data.focus_areas : []);
             setVerificationStatus(data.verification_status || 'pending');
+            // Filter out legacy values not present in the current canonical list
+            const storedAreas = Array.isArray(data.focus_areas) ? data.focus_areas : [];
+            setSelectedFocusAreas(storedAreas.filter(a => canonical.includes(a)));
           } else {
-            // Prefill org name with user's name if blank
             setOrganizationName(profile?.name || '');
           }
         }
       } catch (err) {
-        console.error("Error loading NGO profile:", err);
+        console.error('Error loading NGO profile:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchNgoProfile();
+    init();
   }, [profile]);
 
   const toggleFocusArea = (area) => {
@@ -80,8 +110,8 @@ export const NgoOnboarding = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!organizationName.trim() || !registrationNumber.trim()) {
-      setErrorMsg('Organization Name and Registration Number are required.');
+    if (!organizationName.trim()) {
+      setErrorMsg('Organization Name is required.');
       return;
     }
 
@@ -89,6 +119,14 @@ export const NgoOnboarding = () => {
       setErrorMsg('Please select at least one focus area.');
       return;
     }
+
+    // Validate individual fields
+    const regErr = validateField('registrationNumber', registrationNumber);
+    const panErr = validateField('panNumber', panNumber);
+    const darpanErr = validateField('darpanId', darpanId);
+    const newErrors = { registrationNumber: regErr, panNumber: panErr, darpanId: darpanErr };
+    setFieldErrors(newErrors);
+    if (regErr || panErr || darpanErr) return;
 
     setSaving(true);
     setErrorMsg('');
@@ -100,10 +138,11 @@ export const NgoOnboarding = () => {
 
       const payload = {
         organization_name: organizationName,
-        registration_number: registrationNumber,
+        registration_number: registrationNumber.trim() || null,
         pan_number: panNumber || null,
         darpan_id: darpanId || null,
-        focus_areas: selectedFocusAreas
+        // Only submit values that are currently valid per the backend list
+        focus_areas: selectedFocusAreas.filter(a => allowedFocusAreas.includes(a))
       };
 
       const response = await fetch(`${apiUrl}/api/ngo/profile`, {
@@ -123,11 +162,8 @@ export const NgoOnboarding = () => {
       setSuccessMsg(isEditMode ? 'NGO Profile updated successfully!' : 'NGO Onboarding complete! Profile submitted.');
       setIsEditMode(true);
 
-      // Refresh AuthContext profile so navbar updates immediately with organization name
-      if (fetchProfile && token) {
-        await fetchProfile(token);
-      }
-
+      // Refresh ngoProfile in context so Navbar picks up the new organization_name immediately
+      await refreshNgoProfile();
       setTimeout(() => {
         navigate('/ngo-dashboard');
       }, 1200);
@@ -208,16 +244,22 @@ export const NgoOnboarding = () => {
 
                 <div>
                   <label className="block text-xs font-semibold text-brand-dark uppercase mb-1">
-                    Registration Number <span className="text-brand-error">*</span>
+                    Registration Number <span className="text-gray-400 font-normal">(Optional)</span>
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="e.g. REG-123456"
+                    placeholder="Max 9 digits"
+                    maxLength={9}
                     value={registrationNumber}
-                    onChange={(e) => setRegistrationNumber(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 9);
+                      handleFieldChange('registrationNumber', val, setRegistrationNumber);
+                    }}
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
+                  {fieldErrors.registrationNumber && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.registrationNumber}</p>
+                  )}
                 </div>
               </div>
 
@@ -230,10 +272,17 @@ export const NgoOnboarding = () => {
                   <input
                     type="text"
                     placeholder="e.g. ABCDE1234F"
+                    maxLength={10}
                     value={panNumber}
-                    onChange={(e) => setPanNumber(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase().slice(0, 10);
+                      handleFieldChange('panNumber', val, setPanNumber);
+                    }}
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
+                  {fieldErrors.panNumber && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.panNumber}</p>
+                  )}
                 </div>
 
                 <div>
@@ -243,10 +292,14 @@ export const NgoOnboarding = () => {
                   <input
                     type="text"
                     placeholder="e.g. AB/2021/012345"
+                    maxLength={16}
                     value={darpanId}
-                    onChange={(e) => setDarpanId(e.target.value)}
+                    onChange={(e) => handleFieldChange('darpanId', e.target.value, setDarpanId)}
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
+                  {fieldErrors.darpanId && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.darpanId}</p>
+                  )}
                 </div>
               </div>
 
@@ -258,7 +311,7 @@ export const NgoOnboarding = () => {
                 <p className="text-[11px] text-gray-500 mb-3">Select all domains relevant to your NGO operations:</p>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {ALLOWED_FOCUS_AREAS.map((area) => {
+                  {allowedFocusAreas.map((area) => {
                     const isSelected = selectedFocusAreas.includes(area);
                     return (
                       <button

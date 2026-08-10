@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import date
 from uuid import UUID
@@ -12,6 +12,8 @@ from app.schemas.auth import UserRole
 
 router = APIRouter(prefix="/api/requirements", tags=["Requirements"])
 
+DEFAULT_ATTENDANCE_RADIUS = 100000.0
+
 class RequirementCreate(BaseModel):
     title: str = Field(..., max_length=200)
     description: Optional[str] = None
@@ -19,11 +21,19 @@ class RequirementCreate(BaseModel):
     skill_tags: List[str] = []
     seats_total: int = Field(..., gt=0)
     event_date: date
-    location_name: str = Field(..., max_length=255)
-    event_latitude: float
-    event_longitude: float
-    attendance_radius: Optional[float] = 50.0
+    # Location: either location_name OR (event_latitude + event_longitude) must be provided
+    location_name: Optional[str] = Field(None, max_length=255)
+    event_latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    event_longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
+    attendance_radius: Optional[float] = DEFAULT_ATTENDANCE_RADIUS
     is_urgent: bool = False
+
+    @field_validator('event_date')
+    @classmethod
+    def validate_event_date(cls, v):
+        if v < date.today():
+            raise ValueError('Event date cannot be in the past. Please select today or a future date.')
+        return v
 
 class RequirementUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
@@ -46,13 +56,48 @@ async def create_requirement(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_role([UserRole.ngo]))
 ):
+    # ── Location validation ──────────────────────────────────────────
+    has_location = bool(request.location_name and request.location_name.strip())
+    has_lat = request.event_latitude is not None
+    has_lon = request.event_longitude is not None
+    has_coords = has_lat and has_lon
+
+    # Nothing provided
+    if not has_location and not has_lat and not has_lon:
+        raise HTTPException(
+            status_code=400,
+            detail="Please enter either a Location or both Latitude and Longitude."
+        )
+
+    # Only one coordinate provided
+    if has_lat != has_lon:
+        raise HTTPException(
+            status_code=400,
+            detail="Please enter both Latitude and Longitude."
+        )
+
+    # Both location AND coordinates provided
+    if has_location and has_coords:
+        raise HTTPException(
+            status_code=400,
+            detail="Enter either Location OR Latitude and Longitude, not both."
+        )
+
+    # Resolve values to store — DB columns are NOT NULL so use safe defaults
+    # When location-name only: store 0.0 for lat/lon (unused placeholders)
+    # When coords only: store empty string for location_name
+    db_location_name = request.location_name.strip() if has_location else ''
+    db_latitude = request.event_latitude if has_coords else 0.0
+    db_longitude = request.event_longitude if has_coords else 0.0
+    # ────────────────────────────────────────────────────────────────
+
     try:
         query = text("""
             INSERT INTO requirements (ngo_profile_id, title, description, category, skill_tags, seats_total, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status)
             VALUES ((SELECT id FROM ngo_profiles WHERE user_id = :ngo_user_id), :title, :description, :category, :skill_tags, :seats_total, :event_date, :location_name, :event_latitude, :event_longitude, :attendance_radius, :is_urgent, 'open')
             RETURNING id, ngo_profile_id, title, description, category, skill_tags, seats_total, seats_filled, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status, created_at
         """)
-        
+
         result = await db.execute(query, {
             "ngo_user_id": current_user["id"],
             "title": request.title,
@@ -61,10 +106,10 @@ async def create_requirement(
             "skill_tags": request.skill_tags,
             "seats_total": request.seats_total,
             "event_date": request.event_date,
-            "location_name": request.location_name,
-            "event_latitude": request.event_latitude,
-            "event_longitude": request.event_longitude,
-            "attendance_radius": request.attendance_radius,
+            "location_name": db_location_name,
+            "event_latitude": db_latitude,
+            "event_longitude": db_longitude,
+            "attendance_radius": request.attendance_radius or DEFAULT_ATTENDANCE_RADIUS,
             "is_urgent": request.is_urgent
         })
         await db.commit()

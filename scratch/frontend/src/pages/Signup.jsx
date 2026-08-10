@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 export const Signup = () => {
   const [role, setRole] = useState('volunteer'); // volunteer, ngo, corporate
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(''); // used only for volunteer
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
   
@@ -19,75 +19,148 @@ export const Signup = () => {
   const [darpanId, setDarpanId] = useState('');
   const [panNumber, setPanNumber] = useState('');
   const [focusAreas, setFocusAreas] = useState('');
-
+  
   // Corporate specific
   const [companyName, setCompanyName] = useState('');
   const [cinNumber, setCinNumber] = useState('');
   const [csrFocusAreas, setCsrFocusAreas] = useState('');
-
+  
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  
+
+  // Field-level validation errors
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  // Validate a single field and return the error string (or '' if valid)
+  const validateField = (fieldName, value) => {
+    switch (fieldName) {
+      case 'registrationNo': {
+        if (value && !/^\d{1,9}$/.test(value)) {
+          return 'Registration number must contain maximum 9 digits (numbers only).';
+        }
+        return '';
+      }
+      case 'darpanId': {
+        if (value && (value.length < 14 || value.length > 16)) {
+          return 'NGO Darpan ID must be between 14 and 16 characters.';
+        }
+        return '';
+      }
+      case 'panNumber': {
+        if (value && value.length !== 10) {
+          return 'PAN number must be 10 characters.';
+        }
+        return '';
+      }
+      case 'cinNumber': {
+        if (value && value.length !== 21) {
+          return 'CIN number must be 21 characters.';
+        }
+        return '';
+      }
+      default:
+        return '';
+    }
+  };
+
+  const handleFieldChange = (fieldName, value, setter) => {
+    setter(value);
+    const err = validateField(fieldName, value);
+    setFieldErrors(prev => ({ ...prev, [fieldName]: err }));
+  };
+
+  // Canonical focus-area list fetched from backend
+  const [allowedFocusAreas, setAllowedFocusAreas] = useState([]);
+  // NGO: selected focus areas (array, not comma string)
+  const [selectedNgoFocusAreas, setSelectedNgoFocusAreas] = useState([]);
+
   const navigate = useNavigate();
 
+  // Fetch canonical focus-area list as soon as the signup page loads
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    fetch(`${apiUrl}/api/ngo/focus-areas`)
+      .then(r => r.json())
+      .then(d => setAllowedFocusAreas(Array.isArray(d.focus_areas) ? d.focus_areas : []))
+      .catch(() => {});
+  }, []);
+
+  const toggleNgoFocusArea = (area) => {
+    setSelectedNgoFocusAreas(prev =>
+      prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]
+    );
+  };
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
-    setLoading(true);
 
-    // Build the request body
+    // Run all field validations before submitting
+    if (role === 'ngo') {
+      const regErr = validateField('registrationNo', registrationNo);
+      const darpanErr = validateField('darpanId', darpanId);
+      const panErr = validateField('panNumber', panNumber);
+      const newErrors = { registrationNo: regErr, darpanId: darpanErr, panNumber: panErr };
+      setFieldErrors(newErrors);
+      if (regErr || darpanErr || panErr) return;
+    }
+
+    if (role === 'corporate') {
+      const cinErr = validateField('cinNumber', cinNumber);
+      setFieldErrors({ cinNumber: cinErr });
+      if (cinErr) return;
+    }
+
+    setLoading(true);
+    
+    // Build request body
     const signupData = {
       email,
       password,
       role,
-      name,
-      phone: phone || null,
-      city: city || null,
     };
-
+    
+    // Add common optional fields
+    if (phone) signupData.phone = phone;
+    if (city) signupData.city = city;
+    
     if (role === 'volunteer') {
+      signupData.name = name;          // required by backend
       signupData.skill_tags = skillTags
-        ? skillTags.split(',').map((tag) => tag.trim()).filter(Boolean)
+        ? skillTags.split(',').map(tag => tag.trim()).filter(Boolean)
         : [];
     } else if (role === 'ngo') {
-      signupData.org_name = orgName || name;
-      signupData.registration_no = registrationNo || null;
+      signupData.name = orgName;              // backend `name` field (required)
+      signupData.organization_name = orgName; // backend ngo profile field
+      signupData.registration_number = registrationNo || null; // correct key
       signupData.darpan_id = darpanId || null;
       signupData.pan_number = panNumber || null;
-      signupData.focus_areas = focusAreas
-        ? focusAreas.split(',').map((tag) => tag.trim()).filter(Boolean)
-        : [];
+      // Use the validated selection — only values from the canonical backend list
+      signupData.focus_areas = selectedNgoFocusAreas;
     } else if (role === 'corporate') {
-      signupData.company_name = companyName || name;
+      signupData.name = companyName;          // backend `name` field (required)
+      signupData.company_name = companyName;  // backend corporate profile field
       signupData.cin_number = cinNumber || null;
       signupData.csr_focus_areas = csrFocusAreas
-        ? csrFocusAreas.split(',').map((tag) => tag.trim()).filter(Boolean)
+        ? csrFocusAreas.split(',').map(tag => tag.trim()).filter(Boolean)
         : [];
     }
-
+    
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
       const response = await fetch(`${apiUrl}/api/auth/signup`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(signupData),
       });
-
       const result = await response.json();
-
       if (!response.ok) {
         throw new Error(result.detail || 'Registration failed.');
       }
-
       setSuccessMsg('Account registered successfully! Redirecting to login page...');
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
-
+      setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
       setErrorMsg(err.message || 'An error occurred during registration.');
       console.error(err);
@@ -104,34 +177,28 @@ export const Signup = () => {
           Create an account on the verified volunteer & compliance portal
         </p>
       </div>
-
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-lg">
         <div className="bg-white py-8 px-6 border border-brand-border rounded-md sm:px-10">
-          
           <h3 className="text-lg font-bold text-brand-dark mb-6 border-b border-brand-border pb-3 uppercase tracking-wider text-xs">
             Account Registration
           </h3>
-
           {errorMsg && (
             <div className="mb-6 p-4 bg-red-50 border border-brand-error rounded-md text-brand-error text-xs flex items-start space-x-2">
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{errorMsg}</span>
             </div>
           )}
-
           {successMsg && (
             <div className="mb-6 p-4 bg-green-50 border border-brand-success rounded-md text-brand-success text-xs flex items-start space-x-2 animate-pulse">
               <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{successMsg}</span>
             </div>
           )}
-
           <form onSubmit={handleSubmit} className="space-y-6">
-            
             {/* Role Selector */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                I am registering as a:
+                I am registering as:
               </label>
               <div className="grid grid-cols-3 gap-3">
                 <button
@@ -169,7 +236,6 @@ export const Signup = () => {
                 </button>
               </div>
             </div>
-
             {/* Core credentials */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -181,12 +247,11 @@ export const Signup = () => {
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={e => setEmail(e.target.value)}
                   className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                   placeholder="email@example.com"
                 />
               </div>
-
               <div>
                 <label htmlFor="password" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Password
@@ -196,63 +261,63 @@ export const Signup = () => {
                   type="password"
                   required
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={e => setPassword(e.target.value)}
                   className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                   placeholder="Min 6 characters"
                 />
               </div>
             </div>
-
-            {/* Primary contact */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="sm:col-span-1">
-                <label htmlFor="name" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Contact Name
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                  placeholder="Full Name"
-                />
+            {/* Primary contact – only for volunteers */}
+            {role === 'volunteer' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-1">
+                  <label htmlFor="name" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Contact Name
+                  </label>
+                  <input
+                    id="name"
+                    type="text"
+                    required
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                    placeholder="Full Name"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="phone" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Phone Number
+                  </label>
+                  <input
+                    id="phone"
+                    type="text"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                    placeholder="e.g. +91 9999999999"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="city" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Registered City
+                  </label>
+                  <input
+                    id="city"
+                    type="text"
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                    placeholder="City Name"
+                  />
+                </div>
               </div>
-
-              <div>
-                <label htmlFor="phone" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Phone Number
-                </label>
-                <input
-                  id="phone"
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                  placeholder="e.g. +91 9999999999"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="city" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Registered City
-                </label>
-                <input
-                  id="city"
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                  placeholder="City Name"
-                />
-              </div>
-            </div>
-
+            )}
             {/* Role specific forms */}
             {role === 'volunteer' && (
               <div className="border-t border-brand-border pt-4">
-                <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wide mb-3">Volunteer Profile Settings</h4>
+                <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wide mb-3">
+                  Volunteer Profile Settings
+                </h4>
                 <div>
                   <label htmlFor="skillTags" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Skills (Comma separated tags)
@@ -261,18 +326,18 @@ export const Signup = () => {
                     id="skillTags"
                     type="text"
                     value={skillTags}
-                    onChange={(e) => setSkillTags(e.target.value)}
+                    onChange={e => setSkillTags(e.target.value)}
                     className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                     placeholder="e.g. teaching, medical support, IT help"
                   />
                 </div>
               </div>
             )}
-
             {role === 'ngo' && (
               <div className="border-t border-brand-border pt-4 space-y-4">
-                <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wide mb-1">NGO Legal Entity Details</h4>
-                
+                <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wide mb-1">
+                  NGO Legal Entity Details
+                </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="orgName" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -283,12 +348,11 @@ export const Signup = () => {
                       type="text"
                       required
                       value={orgName}
-                      onChange={(e) => setOrgName(e.target.value)}
+                      onChange={e => setOrgName(e.target.value)}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="e.g. Hope Foundation"
                     />
                   </div>
-
                   <div>
                     <label htmlFor="registrationNo" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Reg. Number
@@ -297,13 +361,20 @@ export const Signup = () => {
                       id="registrationNo"
                       type="text"
                       value={registrationNo}
-                      onChange={(e) => setRegistrationNo(e.target.value)}
+                      maxLength={9}
+                      onChange={e => {
+                        // Only allow numeric digits, max 9
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 9);
+                        handleFieldChange('registrationNo', val, setRegistrationNo);
+                      }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                      placeholder="Registration Reg No."
+                      placeholder="Max 9 digits"
                     />
+                    {fieldErrors.registrationNo && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.registrationNo}</p>
+                    )}
                   </div>
                 </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="darpanId" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -313,12 +384,15 @@ export const Signup = () => {
                       id="darpanId"
                       type="text"
                       value={darpanId}
-                      onChange={(e) => setDarpanId(e.target.value)}
+                      maxLength={16}
+                      onChange={e => handleFieldChange('darpanId', e.target.value, setDarpanId)}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="e.g. DL/2026/012345"
                     />
+                    {fieldErrors.darpanId && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.darpanId}</p>
+                    )}
                   </div>
-
                   <div>
                     <label htmlFor="panNumber" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       PAN Number
@@ -327,33 +401,51 @@ export const Signup = () => {
                       id="panNumber"
                       type="text"
                       value={panNumber}
-                      onChange={(e) => setPanNumber(e.target.value)}
+                      maxLength={10}
+                      onChange={e => {
+                        const val = e.target.value.toUpperCase().slice(0, 10);
+                        handleFieldChange('panNumber', val, setPanNumber);
+                      }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="10-digit PAN"
                     />
+                    {fieldErrors.panNumber && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.panNumber}</p>
+                    )}
                   </div>
                 </div>
-
                 <div>
-                  <label htmlFor="focusAreas" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Focus Areas (Comma separated tags)
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Focus Areas
                   </label>
-                  <input
-                    id="focusAreas"
-                    type="text"
-                    value={focusAreas}
-                    onChange={(e) => setFocusAreas(e.target.value)}
-                    className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                    placeholder="e.g. education, environment, health"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {allowedFocusAreas.map(area => {
+                      const isSelected = selectedNgoFocusAreas.includes(area);
+                      return (
+                        <button
+                          key={area}
+                          type="button"
+                          onClick={() => toggleNgoFocusArea(area)}
+                          className={`px-3 py-2 text-xs font-medium rounded-md border text-left flex items-center justify-between transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-brand-primary text-white border-brand-primary'
+                              : 'bg-white text-gray-700 border-brand-border hover:bg-gray-50'
+                          }`}
+                        >
+                          <span>{area}</span>
+                          {isSelected && <ShieldCheck className="w-3.5 h-3.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
-
             {role === 'corporate' && (
               <div className="border-t border-brand-border pt-4 space-y-4">
-                <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wide mb-1">Corporate Entity Details</h4>
-                
+                <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wide mb-1">
+                  Corporate Entity Details
+                </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="companyName" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -364,12 +456,11 @@ export const Signup = () => {
                       type="text"
                       required
                       value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
+                      onChange={e => setCompanyName(e.target.value)}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="e.g. Acme Corporation"
                     />
                   </div>
-
                   <div>
                     <label htmlFor="cinNumber" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Corporate CIN Number
@@ -378,13 +469,19 @@ export const Signup = () => {
                       id="cinNumber"
                       type="text"
                       value={cinNumber}
-                      onChange={(e) => setCinNumber(e.target.value)}
+                      maxLength={21}
+                      onChange={e => {
+                        const val = e.target.value.toUpperCase().slice(0, 21);
+                        handleFieldChange('cinNumber', val, setCinNumber);
+                      }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                      placeholder="21-digit CIN"
+                      placeholder="21-character CIN"
                     />
+                    {fieldErrors.cinNumber && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.cinNumber}</p>
+                    )}
                   </div>
                 </div>
-
                 <div>
                   <label htmlFor="csrFocusAreas" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     CSR Focus Sectors (Comma separated tags)
@@ -393,14 +490,13 @@ export const Signup = () => {
                     id="csrFocusAreas"
                     type="text"
                     value={csrFocusAreas}
-                    onChange={(e) => setCsrFocusAreas(e.target.value)}
+                    onChange={e => setCsrFocusAreas(e.target.value)}
                     className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                     placeholder="e.g. rural development, health, gender equality"
                   />
                 </div>
               </div>
             )}
-
             <div>
               <button
                 type="submit"
@@ -410,9 +506,7 @@ export const Signup = () => {
                 {loading ? 'Creating Account...' : 'Register'}
               </button>
             </div>
-
           </form>
-
           <div className="mt-6 border-t border-brand-border pt-4 text-center">
             <p className="text-xs text-gray-500">
               Already have an account?{' '}
@@ -421,10 +515,11 @@ export const Signup = () => {
               </Link>
             </p>
           </div>
-
         </div>
       </div>
     </div>
   );
 };
+
+
 export default Signup;
