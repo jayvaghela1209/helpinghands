@@ -43,7 +43,7 @@ const BrowseNgos = () => {
     'Skill Development'
   ];
 
-  // --- Fetch Approved NGOs on Component Mount ---
+  // --- Fetch Eligible NGOs on Component Mount ---
   useEffect(() => {
     const fetchNgos = async () => {
       setLoading(true);
@@ -215,7 +215,7 @@ const BrowseNgos = () => {
           </div>
         ) : filteredNgos.length === 0 ? (
           <div className="bg-white border border-brand-border rounded-md p-16 text-center shadow-xs">
-            <p className="text-sm text-gray-500">No approved NGOs match your search query or focus area filter.</p>
+            <p className="text-sm text-gray-500">No eligible NGOs match your search query or focus area filter.</p>
           </div>
         ) : (
           /* NGO Cards Grid */

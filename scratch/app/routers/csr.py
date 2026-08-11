@@ -447,7 +447,7 @@ async def list_verified_ngos(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_role([UserRole.corporate]))
 ):
-    # Fetch only approved NGOs along with their average ratings, total reviews count, and active open requirements count
+    # Fetch eligible NGOs (exclude only suspended/rejected) along with their average ratings, total reviews count, and active open requirements count
     query = text("""
         SELECT np.id as id,
                np.user_id as user_id,
@@ -476,7 +476,7 @@ async def list_verified_ngos(
             WHERE status = 'open'
             GROUP BY ngo_profile_id
         ) req_count ON np.id = req_count.ngo_profile_id
-        WHERE np.verification_status = 'approved'
+        WHERE np.verification_status NOT IN ('suspended', 'rejected')
         ORDER BY np.organization_name ASC
     """)
     result = await db.execute(query)
@@ -488,7 +488,7 @@ async def get_ngo_details(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_role([UserRole.corporate]))
 ):
-    # Fetch details of a specific approved NGO
+    # Fetch details of a specific eligible NGO (exclude only suspended/rejected)
     profile_query = text("""
         SELECT np.id, np.user_id, np.organization_name as name, np.registration_number, np.pan_number, np.darpan_id, np.focus_areas, np.verification_status,
                u.email, u.city,
@@ -503,12 +503,12 @@ async def get_ngo_details(
             FROM ngo_reviews
             GROUP BY ngo_profile_id
         ) avg_rev ON np.id = avg_rev.ngo_profile_id
-        WHERE np.id = :ngo_profile_id AND np.verification_status = 'approved'
+        WHERE np.id = :ngo_profile_id AND np.verification_status NOT IN ('suspended', 'rejected')
     """)
     res = await db.execute(profile_query, {"ngo_profile_id": ngo_profile_id})
     profile = res.mappings().first()
     if not profile:
-        raise HTTPException(status_code=404, detail="NGO profile not found or not approved")
+        raise HTTPException(status_code=404, detail="NGO profile not found or not accessible")
 
     # Fetch active open requirements (volunteering opportunities)
     reqs_query = text("""
