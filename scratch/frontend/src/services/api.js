@@ -25,9 +25,20 @@ async function request(endpoint, options = {}) {
     const data = await response.json().catch(() => ({}));
     
     if (!response.ok) {
-      throw new Error(data.detail || `HTTP Error ${response.status}: ${response.statusText}`);
-    }
-    
+  const detail = data.detail;
+
+  if (typeof detail === 'object' && detail !== null) {
+    const message =
+      detail.detail ||
+      `Distance: ${detail.distance} m, Allowed: ${detail.allowed_radius} m`;
+
+    throw new Error(message);
+  }
+
+  throw new Error(
+    detail || `HTTP Error ${response.status}: ${response.statusText}`
+  );
+}
     return data;
   } catch (error) {
     console.error(`API service error on ${endpoint}:`, error);

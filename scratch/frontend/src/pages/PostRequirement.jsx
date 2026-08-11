@@ -1,190 +1,114 @@
-
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { MapPin, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import { GeoapifyAutocomplete } from '../lib/geoapify.jsx';
 
-// Geoapify Autocomplete — self-contained, no external SDK needed
-const GeoapifyAutocomplete = ({ value, onChange, onSuggestionSelect }) => {
-  const [suggestions, setSuggestions] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [noResults, setNoResults] = useState(false);
-  const [open, setOpen] = useState(false);
-  const debounceRef = useRef(null);
-  const containerRef = useRef(null);
-  const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY;
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const fetchSuggestions = useCallback(async (text) => {
-    if (!text.trim() || text.trim().length < 3) {
-      setSuggestions([]);
-      setNoResults(false);
-      setOpen(false);
-      return;
-    }
-
-    setSearching(true);
-    setNoResults(false);
-
-    try {
-      const url = `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(text)}&limit=5&format=json&apiKey=${apiKey}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      const results = data?.results ?? [];
-
-      if (results.length === 0) {
-        setSuggestions([]);
-        setNoResults(true);
-        setOpen(true);
-      } else {
-        setSuggestions(results);
-        setNoResults(false);
-        setOpen(true);
-      }
-    } catch {
-      setSuggestions([]);
-      setNoResults(false);
-    } finally {
-      setSearching(false);
-    }
-  }, [apiKey]);
-
-  const handleChange = (e) => {
-    const val = e.target.value;
-    onChange(val);
-    // Clear confirmed state upstream handled by parent's onChange
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchSuggestions(val), 350);
-  };
-
-  const handleSelect = (result) => {
-    const address = result.formatted || result.address_line1 || result.city || '';
-    const lat = result.lat;
-    const lon = result.lon;
-    onSuggestionSelect({ address, lat, lon });
-    setSuggestions([]);
-    setNoResults(false);
-    setOpen(false);
-  };
-
-  return (
-    <div ref={containerRef} className="relative">
-      <div className="relative">
-        <input
-          type="text"
-          value={value}
-          onChange={handleChange}
-          onFocus={() => (suggestions.length > 0 || noResults) && setOpen(true)}
-          placeholder="Search event location..."
-          autoComplete="off"
-          className="w-full px-3 py-2 pr-8 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
-        />
-        {searching && (
-          <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
-            <Loader className="w-3.5 h-3.5 text-gray-400 animate-spin" />
-          </span>
-        )}
-      </div>
-
-      {open && (
-        <ul className="absolute z-50 mt-1 w-full bg-white border border-brand-border rounded-md shadow-md overflow-hidden text-sm">
-          {noResults ? (
-            <li className="px-4 py-3 text-xs text-gray-500 italic">
-              No matching location found.
-            </li>
-          ) : (
-            suggestions.map((result, idx) => (
-              <li
-                key={idx}
-                onMouseDown={() => handleSelect(result)}
-                className="px-4 py-2.5 flex items-start space-x-2 hover:bg-brand-secondary cursor-pointer border-b border-brand-border last:border-b-0"
-              >
-                <MapPin className="w-3.5 h-3.5 text-brand-primary flex-shrink-0 mt-0.5" />
-                <span className="text-xs text-brand-dark leading-snug">
-                  {result.formatted || result.address_line1 || result.city}
-                </span>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
-    </div>
-  );
-};
+// ─── Empty location sentinel ──────────────────────────────────────────────────
+const EMPTY_LOCATION = { name: '', lat: '', lon: '' };
 
 export const PostRequirement = () => {
   const { profile } = useAuth();
   const navigate = useNavigate();
 
+  // ── Basic fields ────────────────────────────────────────────────────────────
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Education');
   const [skillTags, setSkillTags] = useState('');
   const [seatsTotal, setSeatsTotal] = useState(10);
   const [eventDate, setEventDate] = useState('');
-  const [locationName, setLocationName] = useState('');
-  const [latitude, setLatitude] = useState('');
-  const [longitude, setLongitude] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
 
-  const [loading, setLoading] = useState(false);
-  const [locationConfirmed, setLocationConfirmed] = useState(false);
-  // 'search' | 'manual'  — which mode produced the confirmed coordinates
-  const [locationMode, setLocationMode] = useState('search');
-  // Manual entry fields (kept separate so they don't stomp Geoapify state)
+  // ── Unified location state ──────────────────────────────────────────────────
+  // { name, lat, lon } — all three are always set together or all empty.
+  // This is the confirmed, submittable location.
+  const [location, setLocation] = useState(EMPTY_LOCATION);
+
+  // Ephemeral manual-entry fields — exist only until "Confirm" is clicked.
+  // Once confirmed they are cleared; the result lives in `location`.
+  const [manualName, setManualName] = useState('');
   const [manualLat, setManualLat] = useState('');
   const [manualLon, setManualLon] = useState('');
+
+  // Search input display value (controlled separately so the autocomplete
+  // can show partial text without that being a "confirmed" location).
+  const [searchText, setSearchText] = useState('');
+
+  // UI state
+  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // ── Derived ─────────────────────────────────────────────────────────────────
+  const locationConfirmed = location.name !== '' && location.lat !== '' && location.lon !== '';
+
+  // ── Location handlers ───────────────────────────────────────────────────────
+
+  // Called by GeoapifyAutocomplete when the user selects a suggestion.
+  // Sets all three fields atomically and clears manual inputs.
   const handleSuggestionSelect = ({ address, lat, lon }) => {
-    setLocationName(address);
-    setLatitude(String(lat));
-    setLongitude(String(lon));
-    setLocationConfirmed(true);
-    setLocationMode('search');
+    if (lat == null || lon == null) {
+      setErrorMsg('Selected location has no coordinates. Please try a different result.');
+      return;
+    }
+    setLocation({ name: address, lat: String(lat), lon: String(lon) });
+    setSearchText(address);
+    setManualName('');
+    setManualLat('');
+    setManualLon('');
     setErrorMsg('');
   };
 
-  const handleLocationChange = (val) => {
-    setLocationName(val);
-    // Typing in the search box clears any previously confirmed search result
-    if (locationConfirmed && locationMode === 'search') {
-      setLocationConfirmed(false);
-      setLatitude('');
-      setLongitude('');
-    }
-    // If user starts typing a location, clear manual coordinates
-    if (val.trim()) {
-      setManualLat('');
-      setManualLon('');
-      if (locationMode === 'manual') {
-        setLocationConfirmed(false);
-        setLatitude('');
-        setLongitude('');
-      }
-    }
+  // Called on every keystroke in the search input.
+  // Any typing invalidates the previously confirmed location.
+  const handleSearchChange = (val) => {
+    setSearchText(val);
+    // Clear the confirmed location — user is actively changing it
+    setLocation(EMPTY_LOCATION);
+    // Also clear manual inputs — only one mode at a time
+    setManualName('');
+    setManualLat('');
+    setManualLon('');
   };
 
-  // Validate and confirm manual coordinates
-  const handleManualConfirm = () => {
-    const lat = parseFloat(manualLat);
-    const lon = parseFloat(manualLon);
+  // Called when the user types in the manual name field.
+  const handleManualNameChange = (val) => {
+    setManualName(val);
+    // Typing manual means "not using search" — clear search state
+    setSearchText('');
+    setLocation(EMPTY_LOCATION);
+  };
 
-    if (manualLat.trim() === '' || manualLon.trim() === '') {
-      setErrorMsg('Both latitude and longitude are required for manual entry.');
+  // Called when the user types in the manual latitude field.
+  const handleManualLatChange = (val) => {
+    setManualLat(val);
+    // Typing coordinates means "not using search" — clear search state
+    setSearchText('');
+    setLocation(EMPTY_LOCATION);
+  };
+
+  // Called when the user types in the manual longitude field.
+  const handleManualLonChange = (val) => {
+    setManualLon(val);
+    setSearchText('');
+    setLocation(EMPTY_LOCATION);
+  };
+
+  // Validates manual inputs, then sets location atomically using the manually entered name.
+  const handleManualConfirm = () => {
+    setErrorMsg('');
+
+    if (manualName.trim() === '') {
+      setErrorMsg('Location name is required.');
       return;
     }
+    if (manualLat.trim() === '' || manualLon.trim() === '') {
+      setErrorMsg('Both latitude and longitude are required.');
+      return;
+    }
+    const lat = parseFloat(manualLat);
+    const lon = parseFloat(manualLon);
     if (isNaN(lat) || isNaN(lon)) {
       setErrorMsg('Latitude and longitude must be valid numbers.');
       return;
@@ -198,97 +122,27 @@ export const PostRequirement = () => {
       return;
     }
 
-    setLatitude(String(lat));
-    setLongitude(String(lon));
-    setLocationConfirmed(true);
-    setLocationMode('manual');
+    // All three set atomically using the NGO's manually entered name;
+    // manual input fields are cleared.
+    setLocation({ name: manualName.trim(), lat: String(lat), lon: String(lon) });
+    setManualName('');
+    setManualLat('');
+    setManualLon('');
     setErrorMsg('');
   };
 
-  // Clearing manual fields also clears confirmation if manual was authoritative
-  const handleManualLatChange = (val) => {
-    setManualLat(val);
-    if (locationConfirmed && locationMode === 'manual') {
-      setLocationConfirmed(false);
-      setLatitude('');
-      setLongitude('');
-    }
-    // If user starts entering coordinates, clear the location name
-    if (val.trim()) {
-      setLocationName('');
-      if (locationMode === 'search') {
-        setLocationConfirmed(false);
-        setLatitude('');
-        setLongitude('');
-      }
-    }
-  };
-
-  const handleManualLonChange = (val) => {
-    setManualLon(val);
-    if (locationConfirmed && locationMode === 'manual') {
-      setLocationConfirmed(false);
-      setLatitude('');
-      setLongitude('');
-    }
-    // If user starts entering coordinates, clear the location name
-    if (val.trim()) {
-      setLocationName('');
-      if (locationMode === 'search') {
-        setLocationConfirmed(false);
-        setLatitude('');
-        setLongitude('');
-      }
-    }
-  };
-
+  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
 
-    // ── Location validation ─────────────────────────────────────────
-    // Check what the user has actually typed/selected in each field
-    const hasLocation = locationName.trim() !== '';
-    const hasLatitude = manualLat.trim() !== '' || (locationMode === 'search' && latitude !== '');
-    const hasLongitude = manualLon.trim() !== '' || (locationMode === 'search' && longitude !== '');
-
-    // Nothing provided at all
-    if (!hasLocation && !hasLatitude && !hasLongitude) {
-      setErrorMsg('Please enter either a Location or both Latitude and Longitude.');
+    if (!locationConfirmed) {
+      setErrorMsg(
+        'Please confirm a location before submitting. ' +
+        'Either select one from the search results or enter coordinates and click "Confirm".'
+      );
       return;
-    }
-
-    // Only one coordinate entered — latitude and longitude must come as a pair
-    if (!hasLocation && (hasLatitude !== hasLongitude)) {
-      setErrorMsg('Please enter both Latitude and Longitude.');
-      return;
-    }
-
-    // Both location name AND coordinates entered — only one method allowed
-    if (hasLocation && (hasLatitude || hasLongitude)) {
-      setErrorMsg('Enter either Location OR Latitude and Longitude, not both.');
-      return;
-    }
-    // ───────────────────────────────────────────────────────────────
-
-    // For coords-only: if the user hasn't clicked "Confirm", parse manualLat/manualLon now
-    const finalLat = latitude !== '' ? parseFloat(latitude) : parseFloat(manualLat);
-    const finalLon = longitude !== '' ? parseFloat(longitude) : parseFloat(manualLon);
-
-    if (hasLatitude && hasLongitude) {
-      if (isNaN(finalLat) || isNaN(finalLon)) {
-        setErrorMsg('Latitude and longitude must be valid numbers.');
-        return;
-      }
-      if (finalLat < -90 || finalLat > 90) {
-        setErrorMsg('Latitude must be between -90 and 90.');
-        return;
-      }
-      if (finalLon < -180 || finalLon > 180) {
-        setErrorMsg('Longitude must be between -180 and 180.');
-        return;
-      }
     }
 
     setLoading(true);
@@ -297,14 +151,15 @@ export const PostRequirement = () => {
       title,
       description: description || null,
       category,
-      skill_tags: skillTags ? skillTags.split(',').map(s => s.trim()).filter(Boolean) : [],
+      skill_tags: skillTags
+        ? skillTags.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
       seats_total: parseInt(seatsTotal, 10),
       event_date: eventDate,
-      // Send only the relevant location fields; backend handles defaults for DB
-      location_name: hasLocation ? locationName.trim() : null,
-      event_latitude: (hasLatitude && hasLongitude) ? finalLat : null,
-      event_longitude: (hasLatitude && hasLongitude) ? finalLon : null,
-      is_urgent: isUrgent
+      location_name: location.name,
+      event_latitude: parseFloat(location.lat),
+      event_longitude: parseFloat(location.lon),
+      is_urgent: isUrgent,
     };
 
     try {
@@ -315,20 +170,18 @@ export const PostRequirement = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.detail || 'Failed to post requirement.');
       }
 
       setSuccessMsg('Requirement posted successfully! Redirecting...');
       setTimeout(() => navigate('/ngo-dashboard'), 2000);
-
     } catch (err) {
       setErrorMsg(err.message || 'An error occurred.');
     } finally {
@@ -336,13 +189,16 @@ export const PostRequirement = () => {
     }
   };
 
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-brand-secondary">
       <main className="max-w-3xl mx-auto px-6 py-8">
 
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-brand-dark">Post Volunteering Need</h1>
-          <p className="text-sm text-gray-500">Create a verified opportunity for volunteers to apply and check-in.</p>
+          <p className="text-sm text-gray-500">
+            Create a verified opportunity for volunteers to apply and check-in.
+          </p>
         </div>
 
         <div className="bg-white border border-brand-border rounded-md p-6">
@@ -366,8 +222,11 @@ export const PostRequirement = () => {
 
           <form onSubmit={handleSubmit} className="space-y-6">
 
+            {/* Title */}
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Opportunity Title</label>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Opportunity Title
+              </label>
               <input
                 type="text"
                 required
@@ -378,8 +237,11 @@ export const PostRequirement = () => {
               />
             </div>
 
+            {/* Description */}
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Description</label>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Description
+              </label>
               <textarea
                 rows="4"
                 value={description}
@@ -389,9 +251,12 @@ export const PostRequirement = () => {
               />
             </div>
 
+            {/* Category + Seats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Category</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Category
+                </label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
@@ -406,9 +271,10 @@ export const PostRequirement = () => {
                   <option>Others</option>
                 </select>
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Seats Available</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Total Seats Available
+                </label>
                 <input
                   type="number"
                   min="1"
@@ -420,9 +286,12 @@ export const PostRequirement = () => {
               </div>
             </div>
 
+            {/* Event Date + Skills */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Event Date</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Event Date
+                </label>
                 <input
                   type="date"
                   required
@@ -433,9 +302,10 @@ export const PostRequirement = () => {
                 />
                 <p className="mt-1 text-[11px] text-gray-400">Previous dates cannot be selected.</p>
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Skills Needed (Comma separated)</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Skills Needed (Comma separated)
+                </label>
                 <input
                   type="text"
                   value={skillTags}
@@ -446,27 +316,29 @@ export const PostRequirement = () => {
               </div>
             </div>
 
+            {/* ── Event Location ─────────────────────────────────────────────── */}
             <div className="border-t border-brand-border pt-4">
               <label className="block text-xs font-bold text-brand-primary uppercase tracking-wider mb-1">
                 Event Location (For Attendance)
               </label>
               <p className="text-[11px] text-gray-400 mb-3">
-                Enter <strong>Location Name</strong> <em>or</em> <strong>Latitude &amp; Longitude</strong> — not both.
+                Search for a location <em>or</em> enter coordinates manually.
+                Either way, the full location (name + coordinates) will be confirmed together.
               </p>
 
-              {/* ── Mode 1: Geoapify search ── */}
+              {/* Search */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                  Location Name
+                  Search by Name / Address
                 </label>
                 <GeoapifyAutocomplete
-                  value={locationName}
-                  onChange={handleLocationChange}
+                  value={searchText}
+                  onChange={handleSearchChange}
                   onSuggestionSelect={handleSuggestionSelect}
                 />
               </div>
 
-              {/* ── Divider ── */}
+              {/* Divider */}
               <div className="flex items-center my-4">
                 <div className="flex-1 border-t border-brand-border" />
                 <span className="mx-3 text-[10px] font-bold uppercase tracking-widest text-gray-400">
@@ -475,57 +347,78 @@ export const PostRequirement = () => {
                 <div className="flex-1 border-t border-brand-border" />
               </div>
 
-              {/* ── Mode 2: Manual lat/lon ── */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Manual name + lat/lon */}
+              <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    Latitude <span className="text-gray-400 font-normal">(−90 to 90)</span>
+                    Location Name / Exact Address
                   </label>
                   <input
-                    type="number"
-                    step="any"
-                    value={manualLat}
-                    onChange={(e) => handleManualLatChange(e.target.value)}
-                    placeholder="e.g. 23.0540"
+                    type="text"
+                    value={manualName}
+                    onChange={(e) => handleManualNameChange(e.target.value)}
+                    placeholder="e.g. XYZ Community Hall, Ahmedabad"
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    Longitude <span className="text-gray-400 font-normal">(−180 to 180)</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={manualLon}
-                    onChange={(e) => handleManualLonChange(e.target.value)}
-                    placeholder="e.g. 72.5474"
-                    className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
-                  />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                      Latitude <span className="text-gray-400 font-normal">(−90 to 90)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={manualLat}
+                      onChange={(e) => handleManualLatChange(e.target.value)}
+                      placeholder="e.g. 23.0540"
+                      className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                      Longitude <span className="text-gray-400 font-normal">(−180 to 180)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={manualLon}
+                      onChange={(e) => handleManualLonChange(e.target.value)}
+                      placeholder="e.g. 72.5474"
+                      className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                    />
+                  </div>
                 </div>
               </div>
+
               <button
                 type="button"
                 onClick={handleManualConfirm}
-                disabled={!manualLat.trim() || !manualLon.trim()}
+                disabled={!manualName.trim() || !manualLat.trim() || !manualLon.trim()}
                 className="mt-3 text-xs font-bold px-4 py-2 border border-brand-border bg-brand-secondary text-brand-primary hover:bg-gray-100 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
-                Confirm Manual Coordinates
+                Confirm Coordinates
               </button>
 
-              {/* ── Confirmed coordinates display ── */}
-              {locationConfirmed && latitude && longitude && (
-                <div className="mt-3 flex items-center space-x-2 text-xs text-brand-success">
-                  <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>
-                    Location confirmed
-                    {locationMode === 'manual' ? ' (manual)' : ''}:{' '}
-                    {parseFloat(latitude).toFixed(7)}, {parseFloat(longitude).toFixed(7)}
-                  </span>
+              {/* Confirmed location display */}
+              {locationConfirmed && (
+                <div className="mt-3 p-3 bg-green-50 border border-brand-success rounded-md">
+                  <div className="flex items-start space-x-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-brand-success flex-shrink-0 mt-0.5" />
+                    <div className="text-xs text-brand-success">
+                      <p className="font-semibold">{location.name}</p>
+                      <p className="font-mono text-[11px] mt-0.5">
+                        {parseFloat(location.lat).toFixed(7)}, {parseFloat(location.lon).toFixed(7)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
+            {/* ── End Event Location ─────────────────────────────────────────── */}
 
+            {/* Urgent */}
             <div className="flex items-center space-x-2">
               <input
                 id="isUrgent"
@@ -534,11 +427,15 @@ export const PostRequirement = () => {
                 onChange={(e) => setIsUrgent(e.target.checked)}
                 className="h-4 w-4 text-brand-primary border-brand-border rounded-sm"
               />
-              <label htmlFor="isUrgent" className="text-xs font-semibold text-gray-700 uppercase tracking-wider select-none">
+              <label
+                htmlFor="isUrgent"
+                className="text-xs font-semibold text-gray-700 uppercase tracking-wider select-none"
+              >
                 Mark as High Priority / Urgent Need
               </label>
             </div>
 
+            {/* Actions */}
             <div className="pt-4 border-t border-brand-border flex justify-end space-x-4">
               <button
                 type="button"
@@ -563,4 +460,5 @@ export const PostRequirement = () => {
     </div>
   );
 };
+
 export default PostRequirement;

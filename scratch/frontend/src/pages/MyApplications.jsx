@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { Link } from 'react-router-dom';
 import { CheckCircle, AlertCircle, XCircle, Clock, Check, Star, ArrowLeft, Download } from 'lucide-react';
 import { formatWorkedHours } from '../lib/format';
+import { getAccuratePosition } from '../lib/getAccuratePosition';
 
 export const MyApplications = () => {
   const { user } = useAuth();
@@ -62,36 +63,32 @@ export const MyApplications = () => {
       setCheckInMsg(prev => ({ ...prev, [appId]: 'Geolocation not supported' }));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        // Diagnostic log — GPS values from browser
-        console.log('[CheckIn] GPS coords from navigator.geolocation:', {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        });
+    setCheckInMsg(prev => ({ ...prev, [appId]: 'Getting your location…' }));
 
-        const payload = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
+    getAccuratePosition()
+      .then(async ({ latitude, longitude, accuracy }) => {
+        // Diagnostic log — GPS values from getAccuratePosition
+        console.log('[CheckIn] GPS coords from getAccuratePosition:', { latitude, longitude, accuracy });
 
-        // Endpoint uses requirement id, NOT application id
+        const payload = { latitude, longitude };
         console.log('[CheckIn] Sending payload to POST /api/requirements/' + requirementId + '/checkin', payload);
 
         try {
           await api.post(`/api/requirements/${requirementId}/checkin`, payload);
-          setApplications(prev => prev.map(app => app.id === appId ? { ...app, attendance_status: 'checked_in' } : app));
+          setApplications(prev =>
+            prev.map(app => app.id === appId ? { ...app, attendance_status: 'checked_in' } : app)
+          );
           setCheckInMsg(prev => ({ ...prev, [appId]: 'Checked in successfully' }));
-        } catch (err) {
-          setCheckInMsg(prev => ({ ...prev, [appId]: err.message || 'Check‑in failed' }));
-        }
-      },
-      (geoErr) => {
-        setCheckInMsg(prev => ({ ...prev, [appId]: geoErr.message || 'Unable to get location' }));
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+  } catch (err) {
+  setCheckInMsg(prev => ({
+    ...prev,
+    [appId]: err.message || 'Check-in failed'
+  }));
+}
+      })
+      .catch((err) => {
+        setCheckInMsg(prev => ({ ...prev, [appId]: err.message || 'Unable to get location' }));
+      });
   };
 
   const handleCheckOut = (appId) => {

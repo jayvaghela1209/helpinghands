@@ -283,7 +283,25 @@ const BrowseOpportunities = () => {
 
                     <div className="flex items-center space-x-2">
                       <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                      <span className="line-clamp-1">{opp.location_name || 'Virtual Opportunity'}</span>
+                      <span className="line-clamp-1">
+                        {(() => {
+                          // Show the stored location name if present and non-empty.
+                          // For legacy coordinate-only requirements (sentinel 0,0 or real coords
+                          // but no name), show the coordinate pair.
+                          // Only show "Virtual Opportunity" when there is genuinely no location
+                          // data at all — no name, no usable coordinates.
+                          const name = opp.location_name?.trim();
+                          if (name) return name;
+                          const lat = opp.event_latitude != null ? parseFloat(opp.event_latitude) : null;
+                          const lon = opp.event_longitude != null ? parseFloat(opp.event_longitude) : null;
+                          const hasRealCoords =
+                            lat !== null &&
+                            lon !== null &&
+                            !(lat === 0.0 && lon === 0.0);
+                          if (hasRealCoords) return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+                          return 'Virtual Opportunity';
+                        })()}
+                      </span>
                     </div>
 
                     <div className="flex items-center space-x-2">
