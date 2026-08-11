@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Briefcase, Edit, CheckCircle, XCircle, AlertCircle, Calendar, MapPin, Users, ArrowLeft } from 'lucide-react';
+import { Edit, CheckCircle, XCircle, AlertCircle, Calendar, MapPin, Users, ArrowLeft, Loader } from 'lucide-react';
+import { GeoapifyAutocomplete } from '../lib/geoapify.jsx';
+
+// ─── Empty location sentinel ──────────────────────────────────────────────────
+const EMPTY_LOCATION = { name: '', lat: '', lon: '' };
 
 export const ManageRequirements = () => {
   const navigate = useNavigate();
@@ -19,7 +23,17 @@ export const ManageRequirements = () => {
   const [editCategory, setEditCategory] = useState('Education');
   const [editSeatsTotal, setEditSeatsTotal] = useState(10);
   const [editEventDate, setEditEventDate] = useState('');
-  const [editLocationName, setEditLocationName] = useState('');
+  // ── Unified location state (same model as PostRequirement) ──
+  // { name, lat, lon } — always set together or all empty.
+  const [editLocation, setEditLocation] = useState(EMPTY_LOCATION);
+  // Ephemeral manual-entry fields — cleared after confirm
+  const [editManualName, setEditManualName] = useState('');
+  const [editManualLat, setEditManualLat] = useState('');
+  const [editManualLon, setEditManualLon] = useState('');
+  // Search input display value (unconfirmed partial text)
+  const [editSearchText, setEditSearchText] = useState('');
+  // ────────────────────────────────────────────────────────────
+  const [editAttendanceRadius, setEditAttendanceRadius] = useState('');
   const [saving, setSaving] = useState(false);
 
   const fetchRequirements = async () => {
@@ -87,16 +101,156 @@ export const ManageRequirements = () => {
     setEditCategory(req.category || 'Education');
     setEditSeatsTotal(req.seats_total || 10);
     setEditEventDate(req.event_date || '');
-    setEditLocationName(req.location_name || '');
+    setEditAttendanceRadius(req.attendance_radius != null ? String(req.attendance_radius) : '');
+
+    // Pre-populate unified location state from stored data.
+    // Real coordinates = both non-null AND not the (0.0, 0.0) sentinel that
+    // was stored for name-only requirements before the unified model.
+    const storedLat = req.event_latitude != null ? parseFloat(req.event_latitude) : null;
+    const storedLon = req.event_longitude != null ? parseFloat(req.event_longitude) : null;
+    const hasMeaningfulCoords =
+      storedLat !== null &&
+      storedLon !== null &&
+      !(storedLat === 0.0 && storedLon === 0.0);
+
+    if (hasMeaningfulCoords && req.location_name && req.location_name.trim() !== '') {
+      // Best case: requirement has both name and real coordinates (new unified model)
+      setEditLocation({
+        name: req.location_name,
+        lat: String(storedLat),
+        lon: String(storedLon),
+      });
+      setEditSearchText(req.location_name);
+      setEditManualName('');
+      setEditManualLat('');
+      setEditManualLon('');
+    } else if (hasMeaningfulCoords) {
+      // Has coordinates but no name — pre-fill manual fields for re-confirmation
+      setEditLocation(EMPTY_LOCATION);
+      setEditManualName('');
+      setEditManualLat(String(storedLat));
+      setEditManualLon(String(storedLon));
+      setEditSearchText('');
+    } else {
+      // Name-only (or missing location entirely)
+      setEditLocation(
+        req.location_name && req.location_name.trim()
+          ? { name: req.location_name, lat: '', lon: '' }
+          : EMPTY_LOCATION
+      );
+      setEditSearchText(req.location_name || '');
+      setEditManualName('');
+      setEditManualLat('');
+      setEditManualLon('');
+    }
+
+    setTimeout(
+      () => document.getElementById('edit-form-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      50
+    );
   };
+
+  // ── Location handlers (unified model, mirrors PostRequirement) ────────────
+
+  const handleEditSuggestionSelect = ({ address, lat, lon }) => {
+    if (lat == null || lon == null) {
+      setErrorMsg('Selected location has no coordinates. Please try a different result.');
+      return;
+    }
+    setEditLocation({ name: address, lat: String(lat), lon: String(lon) });
+    setEditSearchText(address);
+    setEditManualName('');
+    setEditManualLat('');
+    setEditManualLon('');
+    setErrorMsg('');
+  };
+
+  const handleEditSearchChange = (val) => {
+    setEditSearchText(val);
+    setEditLocation(EMPTY_LOCATION);
+    setEditManualName('');
+    setEditManualLat('');
+    setEditManualLon('');
+  };
+
+  const handleEditManualNameChange = (val) => {
+    setEditManualName(val);
+    setEditSearchText('');
+    setEditLocation(EMPTY_LOCATION);
+  };
+
+  const handleEditManualLatChange = (val) => {
+    setEditManualLat(val);
+    setEditSearchText('');
+    setEditLocation(EMPTY_LOCATION);
+  };
+
+  const handleEditManualLonChange = (val) => {
+    setEditManualLon(val);
+    setEditSearchText('');
+    setEditLocation(EMPTY_LOCATION);
+  };
+
+  const handleEditManualConfirm = () => {
+    setErrorMsg('');
+
+    if (editManualName.trim() === '') {
+      setErrorMsg('Location name is required.');
+      return;
+    }
+    if (editManualLat.trim() === '' || editManualLon.trim() === '') {
+      setErrorMsg('Both latitude and longitude are required.');
+      return;
+    }
+    const lat = parseFloat(editManualLat);
+    const lon = parseFloat(editManualLon);
+    if (isNaN(lat) || isNaN(lon)) {
+      setErrorMsg('Latitude and longitude must be valid numbers.');
+      return;
+    }
+    if (lat < -90 || lat > 90) {
+      setErrorMsg('Latitude must be between -90 and 90.');
+      return;
+    }
+    if (lon < -180 || lon > 180) {
+      setErrorMsg('Longitude must be between -180 and 180.');
+      return;
+    }
+
+    // All three set atomically using the NGO's manually entered name
+    setEditLocation({ name: editManualName.trim(), lat: String(lat), lon: String(lon) });
+    setEditManualName('');
+    setEditManualLat('');
+    setEditManualLon('');
+    setErrorMsg('');
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const editLocationConfirmed =
+    editLocation.name !== '' && editLocation.lat !== '' && editLocation.lon !== '';
 
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     if (!editingReq) return;
 
-    setSaving(true);
     setErrorMsg('');
     setSuccessMsg('');
+
+    if (!editLocationConfirmed) {
+      setErrorMsg(
+        'Please confirm a location before saving. ' +
+        'Either select one from search results or enter coordinates and click "Confirm".'
+      );
+      return;
+    }
+
+    const parsedRadius = editAttendanceRadius.trim() !== '' ? parseFloat(editAttendanceRadius) : null;
+    if (parsedRadius !== null && (isNaN(parsedRadius) || parsedRadius <= 0)) {
+      setErrorMsg('Check-in radius must be a positive number (in meters).');
+      return;
+    }
+
+    setSaving(true);
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -108,16 +262,19 @@ export const ManageRequirements = () => {
         category: editCategory,
         seats_total: parseInt(editSeatsTotal, 10),
         event_date: editEventDate,
-        location_name: editLocationName
+        location_name: editLocation.name,
+        event_latitude: parseFloat(editLocation.lat),
+        event_longitude: parseFloat(editLocation.lon),
+        ...(parsedRadius !== null && { attendance_radius: parsedRadius }),
       };
 
       const response = await fetch(`${apiUrl}/api/requirements/${editingReq.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -192,7 +349,7 @@ export const ManageRequirements = () => {
 
         {/* Edit Form Modal/Card */}
         {editingReq && (
-          <div className="mb-8 bg-white border border-brand-primary rounded-md p-6 shadow-md">
+          <div id="edit-form-card" className="mb-8 bg-white border border-brand-primary rounded-md p-6 shadow-md">
             <h2 className="text-sm font-bold text-brand-dark uppercase border-b border-brand-border pb-3 mb-4">
               Edit Requirement — {editingReq.title}
             </h2>
@@ -260,29 +417,141 @@ export const ManageRequirements = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-gray-600 uppercase mb-1">Location Name</label>
+              {/* ── Event Location ── */}
+              <div className="border-t border-brand-border pt-4">
+                <label className="block text-xs font-bold text-brand-primary uppercase tracking-wider mb-1">
+                  Event Location (For Attendance)
+                </label>
+                <p className="text-[11px] text-gray-400 mb-3">
+                  Search for a location <em>or</em> enter coordinates manually.
+                  Either way, the full location (name + coordinates) will be confirmed together.
+                </p>
+
+                {/* Search */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    Search by Name / Address
+                  </label>
+                  <GeoapifyAutocomplete
+                    value={editSearchText}
+                    onChange={handleEditSearchChange}
+                    onSuggestionSelect={handleEditSuggestionSelect}
+                  />
+                </div>
+
+                {/* Divider */}
+                <div className="flex items-center my-4">
+                  <div className="flex-1 border-t border-brand-border" />
+                  <span className="mx-3 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                    Or Enter Coordinates Manually
+                  </span>
+                  <div className="flex-1 border-t border-brand-border" />
+                </div>
+
+                {/* Manual name + lat/lon */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                      Location Name / Exact Address
+                    </label>
+                    <input
+                      type="text"
+                      value={editManualName}
+                      onChange={(e) => handleEditManualNameChange(e.target.value)}
+                      placeholder="e.g. XYZ Community Hall, Ahmedabad"
+                      className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                        Latitude <span className="text-gray-400 font-normal">(−90 to 90)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editManualLat}
+                        onChange={(e) => handleEditManualLatChange(e.target.value)}
+                        placeholder="e.g. 23.0540"
+                        className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                        Longitude <span className="text-gray-400 font-normal">(−180 to 180)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editManualLon}
+                        onChange={(e) => handleEditManualLonChange(e.target.value)}
+                        placeholder="e.g. 72.5474"
+                        className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleEditManualConfirm}
+                  disabled={!editManualName.trim() || !editManualLat.trim() || !editManualLon.trim()}
+                  className="mt-3 text-xs font-bold px-4 py-2 border border-brand-border bg-brand-secondary text-brand-primary hover:bg-gray-100 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Confirm Coordinates
+                </button>
+
+                {/* Confirmed location display */}
+                {editLocationConfirmed && (
+                  <div className="mt-3 p-3 bg-green-50 border border-brand-success rounded-md">
+                    <div className="flex items-start space-x-2">
+                      <CheckCircle className="w-3.5 h-3.5 text-brand-success flex-shrink-0 mt-0.5" />
+                      <div className="text-xs text-brand-success">
+                        <p className="font-semibold">{editLocation.name}</p>
+                        {editLocation.lat && editLocation.lon && (
+                          <p className="font-mono text-[11px] mt-0.5">
+                            {parseFloat(editLocation.lat).toFixed(7)}, {parseFloat(editLocation.lon).toFixed(7)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Check-in Radius ── */}
+              <div className="border-t border-brand-border pt-4">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Check-in Radius (meters){' '}
+                  <span className="text-gray-400 font-normal normal-case">— leave blank to keep current</span>
+                </label>
                 <input
-                  type="text"
-                  required
-                  value={editLocationName}
-                  onChange={(e) => setEditLocationName(e.target.value)}
-                  className="w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none"
+                  type="number"
+                  step="any"
+                  min="1"
+                  value={editAttendanceRadius}
+                  onChange={(e) => setEditAttendanceRadius(e.target.value)}
+                  placeholder={`Current: ${editingReq.attendance_radius ?? 300} m`}
+                  className="w-full sm:w-64 px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                 />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Volunteers must be within this distance from the event coordinates to check in.
+                </p>
               </div>
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-brand-border">
                 <button
                   type="button"
                   onClick={() => setEditingReq(null)}
-                  className="py-2 px-4 border border-brand-border rounded-md text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  className="py-2 px-4 border border-brand-border rounded-md text-xs font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="py-2 px-6 bg-brand-primary text-white font-bold rounded-md hover:bg-opacity-90 disabled:opacity-50"
+                  className="py-2 px-6 bg-brand-primary text-white font-bold rounded-md hover:bg-opacity-90 disabled:opacity-50 cursor-pointer"
                 >
                   {saving ? 'Saving...' : 'Save Changes'}
                 </button>

@@ -1,5 +1,4 @@
 import React from 'react';
-import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { ShieldCheck, UserCheck, ShieldAlert, Key } from 'lucide-react';
 
@@ -8,7 +7,6 @@ export const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-brand-secondary">
-      <Navbar />
       <main className="max-w-7xl mx-auto px-6 py-8">
         
         {/* Header Section */}

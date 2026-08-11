@@ -69,8 +69,26 @@ async def checkin(
             detail="This event does not have valid coordinates for geo-verification"
         )
 
-    # Use the radius stored in this specific requirement; fall back to 100000m if NULL
-    allowed_radius = float(req["attendance_radius"] or 100000.0)
+    # Guard against the sentinel (0.0, 0.0) stored when the requirement was created
+    # with a location name only (no GPS coordinates).  0.0/0.0 is the Gulf of Guinea —
+    # no legitimate event will ever be located there.
+    if float(req["event_latitude"]) == 0.0 and float(req["event_longitude"]) == 0.0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "This event uses a location name only and does not support GPS check-in. "
+                "Please contact the NGO for manual attendance verification."
+            )
+        )
+
+    # Use the radius stored in this specific requirement.
+    if req["attendance_radius"] is None:
+     raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This event does not have a valid attendance radius"
+       )
+
+    allowed_radius = float(req["attendance_radius"])
 
     distance = calculate_haversine_distance(
         request.latitude, request.longitude,

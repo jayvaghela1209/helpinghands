@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { CheckCircle, AlertCircle, Clock, Flame, Star, ArrowLeft, Download, Award } from 'lucide-react';
-import Navbar from '../components/Navbar';
 import { api } from '../services/api';
+import { getAccuratePosition } from '../lib/getAccuratePosition';
 
 const RequirementDetails = () => {
   const { id } = useParams();
@@ -113,27 +113,17 @@ const RequirementDetails = () => {
     }
   };
 
-  // Check‑in handler (uses browser geolocation)
+  // Check‑in handler (uses getAccuratePosition for a high-accuracy, validated GPS fix)
   const handleCheckIn = async () => {
     setActionLoading(true);
-    setActionMsg('');
+    setActionMsg('Acquiring GPS location…');
     try {
-      const getLocation = () => new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-        });
-      });
-      const pos = await getLocation();
+      const { latitude, longitude, accuracy } = await getAccuratePosition();
 
-      // Diagnostic log — GPS values from browser
-      console.log('[CheckIn] GPS coords from navigator.geolocation:', {
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-      });
+      // Diagnostic log — GPS values from getAccuratePosition
+      console.log('[CheckIn] GPS coords from getAccuratePosition:', { latitude, longitude, accuracy });
 
-      const payload = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      const payload = { latitude, longitude };
 
       // Endpoint uses requirement id (id from useParams), NOT the application id
       console.log('[CheckIn] Sending payload to POST /api/requirements/' + id + '/checkin', payload);
@@ -220,14 +210,14 @@ const RequirementDetails = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-brand-secondary"><Navbar /><div className="text-center py-16">Loading...</div></div>
+      <div className="min-h-screen bg-brand-secondary"><div className="text-center py-16">Loading...</div></div>
     );
   }
 
   if (error) {
     if (error.toLowerCase().includes('not found')) {
       return (
-        <div className="min-h-screen bg-brand-secondary"><Navbar />
+        <div className="min-h-screen bg-brand-secondary">
           <main className="max-w-5xl mx-auto px-6 py-8">
             <h1 className="text-2xl font-bold text-brand-dark mb-4">Opportunity not found</h1>
             <p className="text-gray-600">The opportunity you are looking for does not exist or has been removed.</p>
@@ -237,7 +227,7 @@ const RequirementDetails = () => {
       );
     }
     return (
-      <div className="min-h-screen bg-brand-secondary"><Navbar />Error: {error}</div>
+      <div className="min-h-screen bg-brand-secondary">Error: {error}</div>
     );
   }
 
@@ -276,7 +266,19 @@ const RequirementDetails = () => {
         <p className="text-gray-700 mb-2"><strong>Organization:</strong> {organization_name}</p>
         <p className="text-gray-700 mb-2"><strong>Category:</strong> {category}</p>
         <p className="text-gray-700 mb-2"><strong>Event Date:</strong> {new Date(event_date).toLocaleDateString()}</p>
-        <p className="text-gray-700 mb-2"><strong>Location:</strong> {location_name}</p>
+        <p className="text-gray-700 mb-2">
+          <strong>Location:</strong>{' '}
+          {(() => {
+            const name = location_name?.trim();
+            if (name) return name;
+            const lat = requirement.event_latitude != null ? parseFloat(requirement.event_latitude) : null;
+            const lon = requirement.event_longitude != null ? parseFloat(requirement.event_longitude) : null;
+            const hasRealCoords =
+              lat !== null && lon !== null && !(lat === 0.0 && lon === 0.0);
+            if (hasRealCoords) return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+            return 'Virtual Opportunity';
+          })()}
+        </p>
         <p className="text-gray-700 mb-4"><strong>Description:</strong> {description}</p>
         <p className="text-gray-700 mb-2"><strong>Seats Filled:</strong> {seats_filled} / {seats_total}</p>
         {avg_rating && (

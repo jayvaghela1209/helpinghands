@@ -29,6 +29,47 @@ export const Signup = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Field-level validation errors
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  // Validate a single field and return the error string (or '' if valid)
+  const validateField = (fieldName, value) => {
+    switch (fieldName) {
+      case 'registrationNo': {
+        if (value && !/^\d{1,9}$/.test(value)) {
+          return 'Registration number must contain maximum 9 digits (numbers only).';
+        }
+        return '';
+      }
+      case 'darpanId': {
+        if (value && (value.length < 14 || value.length > 16)) {
+          return 'NGO Darpan ID must be between 14 and 16 characters.';
+        }
+        return '';
+      }
+      case 'panNumber': {
+        if (value && value.length !== 10) {
+          return 'PAN number must be 10 characters.';
+        }
+        return '';
+      }
+      case 'cinNumber': {
+        if (value && value.length !== 21) {
+          return 'CIN number must be 21 characters.';
+        }
+        return '';
+      }
+      default:
+        return '';
+    }
+  };
+
+  const handleFieldChange = (fieldName, value, setter) => {
+    setter(value);
+    const err = validateField(fieldName, value);
+    setFieldErrors(prev => ({ ...prev, [fieldName]: err }));
+  };
+
   // Canonical focus-area list fetched from backend
   const [allowedFocusAreas, setAllowedFocusAreas] = useState([]);
   // NGO: selected focus areas (array, not comma string)
@@ -55,6 +96,23 @@ export const Signup = () => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
+
+    // Run all field validations before submitting
+    if (role === 'ngo') {
+      const regErr = validateField('registrationNo', registrationNo);
+      const darpanErr = validateField('darpanId', darpanId);
+      const panErr = validateField('panNumber', panNumber);
+      const newErrors = { registrationNo: regErr, darpanId: darpanErr, panNumber: panErr };
+      setFieldErrors(newErrors);
+      if (regErr || darpanErr || panErr) return;
+    }
+
+    if (role === 'corporate') {
+      const cinErr = validateField('cinNumber', cinNumber);
+      setFieldErrors({ cinNumber: cinErr });
+      if (cinErr) return;
+    }
+
     setLoading(true);
     
     // Build request body
@@ -303,10 +361,18 @@ export const Signup = () => {
                       id="registrationNo"
                       type="text"
                       value={registrationNo}
-                      onChange={e => setRegistrationNo(e.target.value)}
-                      className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                      placeholder="Registration Reg No."
+                      maxLength={9}
+                      onChange={e => {
+                        // Only allow numeric digits, max 9
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 9);
+                        handleFieldChange('registrationNo', val, setRegistrationNo);
+                      }}
+                      className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                      placeholder="Max 9 digits"
                     />
+                    {fieldErrors.registrationNo && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.registrationNo}</p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -318,10 +384,14 @@ export const Signup = () => {
                       id="darpanId"
                       type="text"
                       value={darpanId}
-                      onChange={e => setDarpanId(e.target.value)}
+                      maxLength={16}
+                      onChange={e => handleFieldChange('darpanId', e.target.value, setDarpanId)}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="e.g. DL/2026/012345"
                     />
+                    {fieldErrors.darpanId && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.darpanId}</p>
+                    )}
                   </div>
                   <div>
                     <label htmlFor="panNumber" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -331,10 +401,17 @@ export const Signup = () => {
                       id="panNumber"
                       type="text"
                       value={panNumber}
-                      onChange={e => setPanNumber(e.target.value)}
+                      maxLength={10}
+                      onChange={e => {
+                        const val = e.target.value.toUpperCase().slice(0, 10);
+                        handleFieldChange('panNumber', val, setPanNumber);
+                      }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="10-digit PAN"
                     />
+                    {fieldErrors.panNumber && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.panNumber}</p>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -392,10 +469,17 @@ export const Signup = () => {
                       id="cinNumber"
                       type="text"
                       value={cinNumber}
-                      onChange={e => setCinNumber(e.target.value)}
+                      maxLength={21}
+                      onChange={e => {
+                        const val = e.target.value.toUpperCase().slice(0, 21);
+                        handleFieldChange('cinNumber', val, setCinNumber);
+                      }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                      placeholder="21-digit CIN"
+                      placeholder="21-character CIN"
                     />
+                    {fieldErrors.cinNumber && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.cinNumber}</p>
+                    )}
                   </div>
                 </div>
                 <div>

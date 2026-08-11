@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import date
 from uuid import UUID
@@ -12,7 +12,7 @@ from app.schemas.auth import UserRole
 
 router = APIRouter(prefix="/api/requirements", tags=["Requirements"])
 
-DEFAULT_ATTENDANCE_RADIUS = 100000.0
+DEFAULT_ATTENDANCE_RADIUS = 300.0
 
 class RequirementCreate(BaseModel):
     title: str = Field(..., max_length=200)
@@ -21,11 +21,27 @@ class RequirementCreate(BaseModel):
     skill_tags: List[str] = []
     seats_total: int = Field(..., gt=0)
     event_date: date
-    location_name: str = Field(..., max_length=255)
+    # All three location fields are required together — the frontend always
+    # sends name + lat + lon as one confirmed, reverse-geocoded unit.
+    location_name: str = Field(..., min_length=1, max_length=255)
     event_latitude: float = Field(..., ge=-90.0, le=90.0)
     event_longitude: float = Field(..., ge=-180.0, le=180.0)
     attendance_radius: Optional[float] = DEFAULT_ATTENDANCE_RADIUS
     is_urgent: bool = False
+
+    @field_validator('event_date')
+    @classmethod
+    def validate_event_date(cls, v):
+        if v < date.today():
+            raise ValueError('Event date cannot be in the past. Please select today or a future date.')
+        return v
+
+    @field_validator('location_name')
+    @classmethod
+    def validate_location_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Location name cannot be blank.')
+        return v.strip()
 
 class RequirementUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
@@ -34,10 +50,41 @@ class RequirementUpdate(BaseModel):
     skill_tags: Optional[List[str]] = None
     seats_total: Optional[int] = Field(None, gt=0)
     event_date: Optional[date] = None
-    location_name: Optional[str] = Field(None, max_length=255)
-    event_latitude: Optional[float] = None
-    event_longitude: Optional[float] = None
+    location_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    event_latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    event_longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
+    attendance_radius: Optional[float] = Field(None, gt=0)
     is_urgent: Optional[bool] = None
+
+    @field_validator('location_name')
+    @classmethod
+    def validate_location_name(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError('Location name cannot be blank.')
+        return v.strip() if v else v
+
+    def validate_location_completeness(self) -> None:
+        """
+        When updating location, all three fields must arrive together.
+        Reject partial updates that would leave the requirement in an
+        inconsistent state (name without coords, or coords without name).
+        """
+        has_name = self.location_name is not None
+        has_lat = self.event_latitude is not None
+        has_lon = self.event_longitude is not None
+
+        # If any location field is present, all three must be present
+        if (has_name or has_lat or has_lon) and not (has_name and has_lat and has_lon):
+            raise ValueError(
+                "When updating location, provide location_name, event_latitude, "
+                "and event_longitude together."
+            )
+
+        # Reject the sentinel
+        if has_lat and has_lon and self.event_latitude == 0.0 and self.event_longitude == 0.0:
+            raise ValueError(
+                "Coordinates (0.0, 0.0) are not a valid event location."
+            )
 
 class StatusUpdate(BaseModel):
     status: str = Field(..., pattern="^(draft|open|completed|cancelled)$")
@@ -48,13 +95,15 @@ async def create_requirement(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_role([UserRole.ngo]))
 ):
+    # Location fields are all required and bounds-validated by the Pydantic schema.
+    # No additional sentinel check here — (0.0, 0.0) is a valid coordinate.
     try:
         query = text("""
             INSERT INTO requirements (ngo_profile_id, title, description, category, skill_tags, seats_total, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status)
             VALUES ((SELECT id FROM ngo_profiles WHERE user_id = :ngo_user_id), :title, :description, :category, :skill_tags, :seats_total, :event_date, :location_name, :event_latitude, :event_longitude, :attendance_radius, :is_urgent, 'open')
             RETURNING id, ngo_profile_id, title, description, category, skill_tags, seats_total, seats_filled, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status, created_at
         """)
-        
+
         result = await db.execute(query, {
             "ngo_user_id": current_user["id"],
             "title": request.title,
@@ -225,6 +274,12 @@ async def edit_requirement(
             detail=f"Editing is only allowed while status is draft or open. Current status: {req['status']}"
         )
 
+    # Validate location field completeness (name + lat + lon must arrive together)
+    try:
+        request.validate_location_completeness()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     fields_to_update = []
     params = {"id": id}
 
@@ -255,6 +310,9 @@ async def edit_requirement(
     if request.event_longitude is not None:
         fields_to_update.append("event_longitude = :event_longitude")
         params["event_longitude"] = request.event_longitude
+    if request.attendance_radius is not None:
+        fields_to_update.append("attendance_radius = :attendance_radius")
+        params["attendance_radius"] = request.attendance_radius
     if request.is_urgent is not None:
         fields_to_update.append("is_urgent = :is_urgent")
         params["is_urgent"] = request.is_urgent
@@ -273,3 +331,21 @@ async def edit_requirement(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to update requirement: {str(e)}")
+
+@router.get("/{id}")
+async def get_requirement_by_id(
+    id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    query = text("""
+        SELECT r.*, np.organization_name as ngo_name
+        FROM requirements r
+        JOIN ngo_profiles np ON r.ngo_profile_id = np.id
+        WHERE r.id = :id
+    """)
+    res = await db.execute(query, {"id": id})
+    req = res.mappings().first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    return req
+

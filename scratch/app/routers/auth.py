@@ -54,8 +54,16 @@ async def get_current_user(
             detail="Missing sub claim in token"
         )
         
-    # Fetch from users database table
-    query = text("SELECT id, role, name, email, phone, city, created_at FROM users WHERE id = :user_id")
+    # Fetch from users database table with organization and company names
+    query = text("""
+        SELECT u.id, u.role, u.name, u.email, u.phone, u.city, u.created_at,
+               np.organization_name,
+               cp.company_name
+        FROM users u
+        LEFT JOIN ngo_profiles np ON u.id = np.user_id
+        LEFT JOIN corporate_profiles cp ON u.id = cp.user_id
+        WHERE u.id = :user_id
+    """)
     result = await db.execute(query, {"user_id": user_id})
     user = result.mappings().first()
     
@@ -180,9 +188,10 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
                     "skill_tags": request.skill_tags
                 })
             elif request.role == UserRole.ngo:
+                # Auto-approve NGOs at registration so they appear in Browse NGOs immediately
                 profile_insert = text("""
-                    INSERT INTO ngo_profiles (user_id, organization_name, registration_number, darpan_id, pan_number, focus_areas)
-                    VALUES (:user_id, :organization_name, :registration_number, :darpan_id, :pan_number, :focus_areas)
+                    INSERT INTO ngo_profiles (user_id, organization_name, registration_number, darpan_id, pan_number, focus_areas, verification_status)
+                    VALUES (:user_id, :organization_name, :registration_number, :darpan_id, :pan_number, :focus_areas, 'approved')
                 """)
                 await db.execute(profile_insert, {
                     "user_id": user_uuid,
@@ -216,7 +225,15 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
         )
 
     # Fetch and return the newly created user
-    query = text("SELECT id, role, name, email, phone, city, created_at FROM users WHERE id = :user_id")
+    query = text("""
+        SELECT u.id, u.role, u.name, u.email, u.phone, u.city, u.created_at,
+               np.organization_name,
+               cp.company_name
+        FROM users u
+        LEFT JOIN ngo_profiles np ON u.id = np.user_id
+        LEFT JOIN corporate_profiles cp ON u.id = cp.user_id
+        WHERE u.id = :user_id
+    """)
     result = await db.execute(query, {"user_id": user_uuid})
     new_user = result.mappings().first()
     return new_user

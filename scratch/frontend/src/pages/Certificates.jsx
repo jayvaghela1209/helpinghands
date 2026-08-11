@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
 import { Award, Download, ArrowLeft, Calendar, Clock, MapPin, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 

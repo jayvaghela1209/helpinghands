@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
+import re
 
 from app.db import get_db
 from app.routers.auth import require_role
@@ -23,10 +24,31 @@ ALLOWED_FOCUS_AREAS = [
 
 class NgoProfileCreateUpdate(BaseModel):
     organization_name: str = Field(..., max_length=200)
-    registration_number: Optional[str] = Field(None, max_length=100)
-    pan_number: Optional[str] = Field(None, max_length=20)
-    darpan_id: Optional[str] = Field(None, max_length=100)
+    registration_number: Optional[str] = Field(None, max_length=9)
+    pan_number: Optional[str] = Field(None, max_length=10)
+    darpan_id: Optional[str] = Field(None, max_length=16)
     focus_areas: List[str] = []
+
+    @field_validator('registration_number')
+    @classmethod
+    def validate_registration_number(cls, v):
+        if v and not re.fullmatch(r'\d{1,9}', v):
+            raise ValueError('Registration number must contain maximum 9 numeric digits only.')
+        return v
+
+    @field_validator('darpan_id')
+    @classmethod
+    def validate_darpan_id(cls, v):
+        if v and (len(v) < 14 or len(v) > 16):
+            raise ValueError('NGO Darpan ID must be between 14 and 16 characters.')
+        return v
+
+    @field_validator('pan_number')
+    @classmethod
+    def validate_pan_number(cls, v):
+        if v and len(v) != 10:
+            raise ValueError('PAN number must be exactly 10 characters.')
+        return v
 
 @router.get("/focus-areas")
 async def get_focus_areas():
@@ -105,9 +127,10 @@ async def create_or_update_ngo_profile(
             res_dict["has_profile"] = True
             return res_dict
         else:
+            # Auto-approve NGOs so they appear in Browse NGOs immediately
             insert_query = text("""
                 INSERT INTO ngo_profiles (user_id, organization_name, registration_number, pan_number, darpan_id, focus_areas, verification_status)
-                VALUES (:user_id, :organization_name, :registration_number, :pan_number, :darpan_id, :focus_areas, 'pending')
+                VALUES (:user_id, :organization_name, :registration_number, :pan_number, :darpan_id, :focus_areas, 'approved')
                 RETURNING *
             """)
             inserted = await db.execute(insert_query, {
@@ -128,3 +151,32 @@ async def create_or_update_ngo_profile(
             status_code=400,
             detail=f"Failed to save NGO profile: {str(e)}"
         )
+
+@router.get("/pledges")
+async def get_received_pledges(
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_role([UserRole.ngo]))
+):
+    # Fetch the NGO profile ID for the logged-in user
+    ngo_query = text("SELECT id FROM ngo_profiles WHERE user_id = :user_id")
+    ngo_res = await db.execute(ngo_query, {"user_id": current_user["id"]})
+    ngo_row = ngo_res.mappings().first()
+    if not ngo_row:
+        return []
+
+    ngo_profile_id = ngo_row["id"]
+
+    # Query CSR pledges with corporate company name and optional requirement title
+    pledges_query = text("""
+        SELECT p.id, p.pledged_amount, p.pledged_hours, p.status, p.created_at,
+               cp.company_name as corporate_name,
+               req.title as requirement_title
+        FROM csr_pledges p
+        JOIN corporate_profiles cp ON p.corporate_profile_id = cp.id
+        LEFT JOIN requirements req ON p.requirement_id = req.id
+        WHERE p.ngo_profile_id = :ngo_profile_id
+        ORDER BY p.created_at DESC
+    """)
+    pledges_res = await db.execute(pledges_query, {"ngo_profile_id": ngo_profile_id})
+    return pledges_res.mappings().all()
+

@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS requirements (
     location_name       VARCHAR(255) NOT NULL,
     event_latitude      NUMERIC(10,7) NOT NULL,
     event_longitude     NUMERIC(10,7) NOT NULL,
-    attendance_radius   NUMERIC(8,2) NOT NULL DEFAULT 50
+    attendance_radius   NUMERIC(8,2) NOT NULL DEFAULT 300
                             CHECK (attendance_radius > 0),
     is_urgent           BOOLEAN NOT NULL DEFAULT FALSE,
     status              VARCHAR(20) NOT NULL DEFAULT 'draft'

@@ -8,8 +8,6 @@ import { Building2, CheckCircle, AlertCircle, ArrowLeft, ShieldCheck } from 'luc
 export const NgoOnboarding = () => {
   const navigate = useNavigate();
   const { profile, refreshNgoProfile } = useAuth();
-
-  const [allowedFocusAreas, setAllowedFocusAreas] = useState([]);
   const [organizationName, setOrganizationName] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [panNumber, setPanNumber] = useState('');
@@ -22,6 +20,41 @@ export const NgoOnboarding = () => {
   const [verificationStatus, setVerificationStatus] = useState('pending');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [allowedFocusAreas, setAllowedFocusAreas] = useState([]);
+
+  // Field-level validation errors
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const validateField = (fieldName, value) => {
+    switch (fieldName) {
+      case 'registrationNumber': {
+        if (value && !/^\d{1,9}$/.test(value.trim())) {
+          return 'Registration number must contain maximum 9 digits (numbers only).';
+        }
+        return '';
+      }
+      case 'panNumber': {
+        if (value && value.length !== 10) {
+          return 'PAN number must be 10 characters.';
+        }
+        return '';
+      }
+      case 'darpanId': {
+        if (value && (value.length < 14 || value.length > 16)) {
+          return 'NGO Darpan ID must be between 14 and 16 characters.';
+        }
+        return '';
+      }
+      default:
+        return '';
+    }
+  };
+
+  const handleFieldChange = (fieldName, value, setter) => {
+    setter(value);
+    const err = validateField(fieldName, value);
+    setFieldErrors(prev => ({ ...prev, [fieldName]: err }));
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -87,6 +120,14 @@ export const NgoOnboarding = () => {
       return;
     }
 
+    // Validate individual fields
+    const regErr = validateField('registrationNumber', registrationNumber);
+    const panErr = validateField('panNumber', panNumber);
+    const darpanErr = validateField('darpanId', darpanId);
+    const newErrors = { registrationNumber: regErr, panNumber: panErr, darpanId: darpanErr };
+    setFieldErrors(newErrors);
+    if (regErr || panErr || darpanErr) return;
+
     setSaving(true);
     setErrorMsg('');
     setSuccessMsg('');
@@ -120,6 +161,7 @@ export const NgoOnboarding = () => {
 
       setSuccessMsg(isEditMode ? 'NGO Profile updated successfully!' : 'NGO Onboarding complete! Profile submitted.');
       setIsEditMode(true);
+
       // Refresh ngoProfile in context so Navbar picks up the new organization_name immediately
       await refreshNgoProfile();
       setTimeout(() => {
@@ -206,11 +248,18 @@ export const NgoOnboarding = () => {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. REG-123456"
+                    placeholder="Max 9 digits"
+                    maxLength={9}
                     value={registrationNumber}
-                    onChange={(e) => setRegistrationNumber(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 9);
+                      handleFieldChange('registrationNumber', val, setRegistrationNumber);
+                    }}
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
+                  {fieldErrors.registrationNumber && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.registrationNumber}</p>
+                  )}
                 </div>
               </div>
 
@@ -223,10 +272,17 @@ export const NgoOnboarding = () => {
                   <input
                     type="text"
                     placeholder="e.g. ABCDE1234F"
+                    maxLength={10}
                     value={panNumber}
-                    onChange={(e) => setPanNumber(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase().slice(0, 10);
+                      handleFieldChange('panNumber', val, setPanNumber);
+                    }}
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
+                  {fieldErrors.panNumber && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.panNumber}</p>
+                  )}
                 </div>
 
                 <div>
@@ -236,10 +292,14 @@ export const NgoOnboarding = () => {
                   <input
                     type="text"
                     placeholder="e.g. AB/2021/012345"
+                    maxLength={16}
                     value={darpanId}
-                    onChange={(e) => setDarpanId(e.target.value)}
+                    onChange={(e) => handleFieldChange('darpanId', e.target.value, setDarpanId)}
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
+                  {fieldErrors.darpanId && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.darpanId}</p>
+                  )}
                 </div>
               </div>
 

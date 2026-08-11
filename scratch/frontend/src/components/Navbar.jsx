@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Activity, Award, Briefcase, Shield } from 'lucide-react';
+import { LogOut, Activity, Award, Briefcase, Shield } from 'lucide-react';
+import logo from '../assets/image.png';
 
 export const Navbar = () => {
   const { profile, ngoProfile, logout } = useAuth();
@@ -12,10 +13,23 @@ export const Navbar = () => {
     navigate('/login');
   };
 
-  // Display name: NGO users show their organization name; all others show profile.name
-  const displayName = profile?.role === 'ngo' && ngoProfile?.organization_name
-    ? ngoProfile.organization_name
+  // Get Organization Name for NGO, Company Name for Corporate, or fall back to contact person name
+  const displayName = profile?.role === 'ngo'
+    ? (profile.organization_name || profile.name)
+    : profile?.role === 'corporate'
+    ? (profile.company_name || profile.name)
     : profile?.name;
+
+  // Format user role label for top navigation bar
+  const roleDisplay = profile?.role === 'ngo'
+    ? 'NGO'
+    : profile?.role === 'corporate'
+    ? 'Corporate'
+    : profile?.role === 'volunteer'
+    ? 'Volunteer'
+    : profile?.role === 'admin'
+    ? 'Admin'
+    : profile?.role;
 
   return (
     <header className="bg-white border-b border-brand-border sticky top-0 z-50">
@@ -24,8 +38,8 @@ export const Navbar = () => {
         {/* Left Section: Branding */}
         <div className="flex items-center space-x-8">
           <Link to="/" className="flex items-center space-x-2">
-            <span className="font-bold text-lg tracking-tight text-brand-primary">HelpingHands</span>
-            <span className="text-[10px] tracking-wider uppercase font-semibold px-2 py-0.5 bg-brand-secondary border border-brand-border text-brand-primary rounded-md">
+            <img src={logo} alt="HelpingHands Logo" className="h-9 w-auto object-contain" />
+            <span className="text-[10px] tracking-wider uppercase font-semibold px-2 py-0.5 bg-brand-secondary border border-brand-border text-brand-primary rounded-md hidden sm:inline">
               Compliance Portal
             </span>
           </Link>
@@ -60,8 +74,9 @@ export const Navbar = () => {
               <>
                 <Link to="/corporate-dashboard" className="text-brand-primary hover:text-brand-accent transition-colors">Corporate Dashboard</Link>
                 <span className="text-brand-border">|</span>
-                <span className="text-gray-400 cursor-not-allowed">CSR Claims</span>
-                <span className="text-gray-400 cursor-not-allowed">Pledges</span>
+                <Link to="/browse-ngos" className="text-brand-primary hover:text-brand-accent transition-colors">Browse NGOs</Link>
+                <span className="text-brand-border">|</span>
+                <Link to="/csr-report" className="text-brand-primary hover:text-brand-accent transition-colors">CSR Report</Link>
               </>
             )}
             {profile && profile.role === 'admin' && (
@@ -77,7 +92,7 @@ export const Navbar = () => {
 
         {/* Right Section: User Info / Authentication CTAs */}
         <div className={`flex items-center space-x-6 ${profile ? 'border-l border-brand-border pl-6 ml-4' : ''}`}>
-          {profile ? (
+          {profile ? 
             <>
               <div className="text-right">
                 <p className="text-xs font-semibold text-brand-dark">{displayName}</p>
@@ -86,7 +101,7 @@ export const Navbar = () => {
                   {profile.role === 'ngo' && <Award className="w-3 h-3 text-brand-primary inline" />}
                   {profile.role === 'corporate' && <Briefcase className="w-3 h-3 text-brand-primary inline" />}
                   {profile.role === 'admin' && <Shield className="w-3 h-3 text-brand-error inline" />}
-                  <span className="capitalize">{profile.role}</span>
+                  <span>{roleDisplay}</span>
                 </p>
               </div>
 
@@ -101,7 +116,7 @@ export const Navbar = () => {
                 <span className="hidden sm:inline">Log Out</span>
               </button>
             </>
-          ) : (
+           : (
             <div className="flex items-center space-x-3">
               <Link
                 to="/login"
