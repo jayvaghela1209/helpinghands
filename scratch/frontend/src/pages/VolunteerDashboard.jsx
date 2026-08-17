@@ -1,10 +1,16 @@
-import React, { useEffect, useState } from 'react';
-
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Award, Clock, Star, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { formatWorkedHours } from '../lib/format';
+
+const APPROVED_CITIES = [
+  'Ahmedabad', 'Bengaluru', 'Bhopal', 'Bhubaneswar', 'Chandigarh',
+  'Chennai', 'Delhi', 'Hyderabad', 'Indore', 'Jaipur',
+  'Kochi', 'Kolkata', 'Lucknow', 'Mumbai', 'Nagpur',
+  'Patna', 'Pune', 'Surat', 'Vadodara', 'Visakhapatnam'
+];
 
 export const VolunteerDashboard = () => {
   const { profile } = useAuth();
@@ -237,13 +243,17 @@ export const VolunteerDashboard = () => {
                   </div>
                   <div>
                     <span className="text-gray-400 block uppercase font-semibold">Registered City</span>
-                    <input
-                      type="text"
+                    <select
                       name="city"
                       value={form.city}
                       onChange={handleChange}
                       className="w-full border border-gray-300 rounded px-2 py-1 mt-1"
-                    />
+                    >
+                      <option value="">Select City</option>
+                      {APPROVED_CITIES.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <span className="text-gray-400 block uppercase font-semibold">Skill Tags (comma separated)</span>

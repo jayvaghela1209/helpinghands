@@ -35,6 +35,52 @@ export const Signup = () => {
   // Validate a single field and return the error string (or '' if valid)
   const validateField = (fieldName, value) => {
     switch (fieldName) {
+      case 'password': {
+        if (value) {
+          if (value.length < 8) {
+            return 'Password must be at least 8 characters and contain at least one uppercase letter and one special character.';
+          }
+          if (!/[A-Z]/.test(value)) {
+            return 'Password must be at least 8 characters and contain at least one uppercase letter and one special character.';
+          }
+          if (!/[!@#$%^&*()_+\-=\[\]{};:'",.< >?/\\|`~]/.test(value)) {
+            return 'Password must be at least 8 characters and contain at least one uppercase letter and one special character.';
+          }
+        }
+        return '';
+      }
+      case 'name': {
+        if (value) {
+          const trimmed = value.trim();
+          if (!trimmed) return 'Name cannot be empty or whitespace only.';
+          if (/\d/.test(trimmed)) return 'Name must not contain digits.';
+          if (/^[^\w\s'-]+$/u.test(trimmed)) return 'Name must not be only special characters.';
+        }
+        return '';
+      }
+      case 'city': {
+        if (value && value !== '') {
+          if (!APPROVED_CITIES.includes(value)) {
+            return 'Please select a valid city.';
+          }
+        }
+        return '';
+      }
+      case 'email': {
+        if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+          return 'Please enter a valid email address.';
+        }
+        return '';
+      }
+      case 'phone': {
+        if (value) {
+          const trimmed = value.trim();
+          if (!/^[6-9][0-9]{9}$/.test(trimmed)) {
+            return 'Phone must be exactly 10 digits starting with 6, 7, 8, or 9.';
+          }
+        }
+        return '';
+      }
       case 'registrationNo': {
         if (value && !/^\d{1,9}$/.test(value)) {
           return 'Registration number must contain maximum 9 digits (numbers only).';
@@ -42,20 +88,29 @@ export const Signup = () => {
         return '';
       }
       case 'darpanId': {
-        if (value && (value.length < 14 || value.length > 16)) {
-          return 'NGO Darpan ID must be between 14 and 16 characters.';
+        if (value) {
+          const trimmed = value.trim().toUpperCase();
+          if (!/^[A-Z]{2}\/[0-9]{4}\/[0-9]{7}$/.test(trimmed)) {
+            return 'Enter a valid NGO DARPAN ID, e.g. GJ/2017/0168501.';
+          }
         }
         return '';
       }
       case 'panNumber': {
-        if (value && value.length !== 10) {
-          return 'PAN number must be 10 characters.';
+        if (value) {
+          const trimmed = value.trim().toUpperCase();
+          if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(trimmed)) {
+            return 'PAN number must be 10 characters in format like AACTS0036Q.';
+          }
         }
         return '';
       }
       case 'cinNumber': {
-        if (value && value.length !== 21) {
-          return 'CIN number must be 21 characters.';
+        if (value) {
+          const trimmed = value.trim().toUpperCase();
+          if (!/^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/.test(trimmed)) {
+            return 'Enter a valid 21-character CIN, e.g. U74999MH2000PTC123456.';
+          }
         }
         return '';
       }
@@ -74,6 +129,13 @@ export const Signup = () => {
   const [allowedFocusAreas, setAllowedFocusAreas] = useState([]);
   // NGO: selected focus areas (array, not comma string)
   const [selectedNgoFocusAreas, setSelectedNgoFocusAreas] = useState([]);
+
+  const APPROVED_CITIES = [
+    'Ahmedabad', 'Bengaluru', 'Bhopal', 'Bhubaneswar', 'Chandigarh',
+    'Chennai', 'Delhi', 'Hyderabad', 'Indore', 'Jaipur',
+    'Kochi', 'Kolkata', 'Lucknow', 'Mumbai', 'Nagpur',
+    'Patna', 'Pune', 'Surat', 'Vadodara', 'Visakhapatnam'
+  ];
 
   const navigate = useNavigate();
 
@@ -97,21 +159,36 @@ export const Signup = () => {
     setErrorMsg('');
     setSuccessMsg('');
 
-    // Run all field validations before submitting
-    if (role === 'ngo') {
-      const regErr = validateField('registrationNo', registrationNo);
-      const darpanErr = validateField('darpanId', darpanId);
-      const panErr = validateField('panNumber', panNumber);
-      const newErrors = { registrationNo: regErr, darpanId: darpanErr, panNumber: panErr };
-      setFieldErrors(newErrors);
-      if (regErr || darpanErr || panErr) return;
+    // Build field validation errors
+    const newErrors = {};
+    
+    // Common validations for all roles
+    newErrors.password = validateField('password', password);
+    newErrors.city = validateField('city', city);
+    
+    if (role === 'volunteer') {
+      newErrors.name = validateField('name', name);
+      newErrors.email = validateField('email', email);
+      newErrors.phone = validateField('phone', phone);
+    } else if (role === 'ngo') {
+      newErrors.orgName = validateField('name', orgName);
+      newErrors.email = validateField('email', email);
+      newErrors.phone = validateField('phone', phone);
+      newErrors.registrationNo = validateField('registrationNo', registrationNo);
+      newErrors.darpanId = validateField('darpanId', darpanId);
+      newErrors.panNumber = validateField('panNumber', panNumber);
+    } else if (role === 'corporate') {
+      newErrors.companyName = validateField('name', companyName);
+      newErrors.email = validateField('email', email);
+      newErrors.phone = validateField('phone', phone);
+      newErrors.cinNumber = validateField('cinNumber', cinNumber);
     }
 
-    if (role === 'corporate') {
-      const cinErr = validateField('cinNumber', cinNumber);
-      setFieldErrors({ cinNumber: cinErr });
-      if (cinErr) return;
-    }
+    // Check if any errors
+    const hasErrors = Object.values(newErrors).some(err => err !== '');
+    setFieldErrors(newErrors);
+    
+    if (hasErrors) return;
 
     setLoading(true);
     
@@ -247,10 +324,17 @@ export const Signup = () => {
                   type="email"
                   required
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => {
+                    setEmail(e.target.value);
+                    const err = validateField('email', e.target.value);
+                    setFieldErrors(prev => ({ ...prev, email: err }));
+                  }}
                   className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                   placeholder="email@example.com"
                 />
+                {fieldErrors.email && (
+                  <p className="mt-1 text-xs text-brand-error">{fieldErrors.email}</p>
+                )}
               </div>
               <div>
                 <label htmlFor="password" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -261,10 +345,17 @@ export const Signup = () => {
                   type="password"
                   required
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={e => {
+                    setPassword(e.target.value);
+                    const err = validateField('password', e.target.value);
+                    setFieldErrors(prev => ({ ...prev, password: err }));
+                  }}
                   className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                  placeholder="Min 6 characters"
+                  placeholder="Min 8 characters"
                 />
+                {fieldErrors.password && (
+                  <p className="mt-1 text-xs text-brand-error">{fieldErrors.password}</p>
+                )}
               </div>
             </div>
             {/* Primary contact – only for volunteers */}
@@ -279,10 +370,17 @@ export const Signup = () => {
                     type="text"
                     required
                     value={name}
-                    onChange={e => setName(e.target.value)}
+                    onChange={e => {
+                      setName(e.target.value);
+                      const err = validateField('name', e.target.value);
+                      setFieldErrors(prev => ({ ...prev, name: err }));
+                    }}
                     className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                     placeholder="Full Name"
                   />
+                  {fieldErrors.name && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.name}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="phone" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -292,23 +390,40 @@ export const Signup = () => {
                     id="phone"
                     type="text"
                     value={phone}
-                    onChange={e => setPhone(e.target.value)}
+                    onChange={e => {
+                      setPhone(e.target.value);
+                      const err = validateField('phone', e.target.value);
+                      setFieldErrors(prev => ({ ...prev, phone: err }));
+                    }}
                     className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                    placeholder="e.g. +91 9999999999"
+                    placeholder="e.g. 9999999999"
                   />
+                  {fieldErrors.phone && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.phone}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="city" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Registered City
                   </label>
-                  <input
+                  <select
                     id="city"
-                    type="text"
                     value={city}
-                    onChange={e => setCity(e.target.value)}
+                    onChange={e => {
+                      setCity(e.target.value);
+                      const err = validateField('city', e.target.value);
+                      setFieldErrors(prev => ({ ...prev, city: err }));
+                    }}
                     className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                    placeholder="City Name"
-                  />
+                  >
+                    <option value="">Select City</option>
+                    {APPROVED_CITIES.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  {fieldErrors.city && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.city}</p>
+                  )}
                 </div>
               </div>
             )}
@@ -348,10 +463,17 @@ export const Signup = () => {
                       type="text"
                       required
                       value={orgName}
-                      onChange={e => setOrgName(e.target.value)}
+                      onChange={e => {
+                        setOrgName(e.target.value);
+                        const err = validateField('name', e.target.value);
+                        setFieldErrors(prev => ({ ...prev, orgName: err }));
+                      }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="e.g. Hope Foundation"
                     />
+                    {fieldErrors.orgName && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.orgName}</p>
+                    )}
                   </div>
                   <div>
                     <label htmlFor="registrationNo" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -365,7 +487,9 @@ export const Signup = () => {
                       onChange={e => {
                         // Only allow numeric digits, max 9
                         const val = e.target.value.replace(/\D/g, '').slice(0, 9);
-                        handleFieldChange('registrationNo', val, setRegistrationNo);
+                        setRegistrationNo(val);
+                        const err = validateField('registrationNo', val);
+                        setFieldErrors(prev => ({ ...prev, registrationNo: err }));
                       }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="Max 9 digits"
@@ -384,10 +508,14 @@ export const Signup = () => {
                       id="darpanId"
                       type="text"
                       value={darpanId}
-                      maxLength={16}
-                      onChange={e => handleFieldChange('darpanId', e.target.value, setDarpanId)}
+                      onChange={e => {
+                        const val = e.target.value.trim().toUpperCase();
+                        setDarpanId(val);
+                        const err = validateField('darpanId', val);
+                        setFieldErrors(prev => ({ ...prev, darpanId: err }));
+                      }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                      placeholder="e.g. DL/2026/012345"
+                      placeholder="e.g. GJ/2017/0168501"
                     />
                     {fieldErrors.darpanId && (
                       <p className="mt-1 text-xs text-brand-error">{fieldErrors.darpanId}</p>
@@ -404,10 +532,12 @@ export const Signup = () => {
                       maxLength={10}
                       onChange={e => {
                         const val = e.target.value.toUpperCase().slice(0, 10);
-                        handleFieldChange('panNumber', val, setPanNumber);
+                        setPanNumber(val);
+                        const err = validateField('panNumber', val);
+                        setFieldErrors(prev => ({ ...prev, panNumber: err }));
                       }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                      placeholder="10-digit PAN"
+                      placeholder="e.g. AACTS0036Q"
                     />
                     {fieldErrors.panNumber && (
                       <p className="mt-1 text-xs text-brand-error">{fieldErrors.panNumber}</p>
@@ -456,10 +586,17 @@ export const Signup = () => {
                       type="text"
                       required
                       value={companyName}
-                      onChange={e => setCompanyName(e.target.value)}
+                      onChange={e => {
+                        setCompanyName(e.target.value);
+                        const err = validateField('name', e.target.value);
+                        setFieldErrors(prev => ({ ...prev, companyName: err }));
+                      }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                       placeholder="e.g. Acme Corporation"
                     />
+                    {fieldErrors.companyName && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.companyName}</p>
+                    )}
                   </div>
                   <div>
                     <label htmlFor="cinNumber" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -472,10 +609,12 @@ export const Signup = () => {
                       maxLength={21}
                       onChange={e => {
                         const val = e.target.value.toUpperCase().slice(0, 21);
-                        handleFieldChange('cinNumber', val, setCinNumber);
+                        setCinNumber(val);
+                        const err = validateField('cinNumber', val);
+                        setFieldErrors(prev => ({ ...prev, cinNumber: err }));
                       }}
                       className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                      placeholder="21-character CIN"
+                      placeholder="e.g. U74999MH2000PTC123456"
                     />
                     {fieldErrors.cinNumber && (
                       <p className="mt-1 text-xs text-brand-error">{fieldErrors.cinNumber}</p>

@@ -27,21 +27,38 @@ export const NgoOnboarding = () => {
 
   const validateField = (fieldName, value) => {
     switch (fieldName) {
+      case 'organizationName': {
+        if (value) {
+          const trimmed = value.trim();
+          if (!trimmed) return 'Organization Name cannot be empty or whitespace only.';
+          if (/\d/.test(trimmed)) return 'Organization Name must not contain digits.';
+        }
+        return '';
+      }
       case 'registrationNumber': {
-        if (value && !/^\d{1,9}$/.test(value.trim())) {
-          return 'Registration number must contain maximum 9 digits (numbers only).';
+        if (value) {
+          const trimmed = value.trim();
+          if (!/^\d{1,9}$/.test(trimmed)) {
+            return 'Registration number must contain maximum 9 digits (numbers only).';
+          }
         }
         return '';
       }
       case 'panNumber': {
-        if (value && value.length !== 10) {
-          return 'PAN number must be 10 characters.';
+        if (value) {
+          const trimmed = value.trim().toUpperCase();
+          if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(trimmed)) {
+            return 'PAN number must be 10 characters in format like AACTS0036Q.';
+          }
         }
         return '';
       }
       case 'darpanId': {
-        if (value && (value.length < 14 || value.length > 16)) {
-          return 'NGO Darpan ID must be between 14 and 16 characters.';
+        if (value) {
+          const trimmed = value.trim().toUpperCase();
+          if (!/^[A-Z]{2}\/[0-9]{4}\/[0-9]{7}$/.test(trimmed)) {
+            return 'Enter a valid NGO DARPAN ID, e.g. GJ/2017/0168501.';
+          }
         }
         return '';
       }
@@ -121,11 +138,13 @@ export const NgoOnboarding = () => {
     }
 
     // Validate individual fields
+    const orgNameErr = validateField('organizationName', organizationName);
     const regErr = validateField('registrationNumber', registrationNumber);
     const panErr = validateField('panNumber', panNumber);
     const darpanErr = validateField('darpanId', darpanId);
-    const newErrors = { registrationNumber: regErr, panNumber: panErr, darpanId: darpanErr };
+    const newErrors = { organizationName: orgNameErr, registrationNumber: regErr, panNumber: panErr, darpanId: darpanErr };
     setFieldErrors(newErrors);
+    if (orgNameErr || regErr || panErr || darpanErr) return;
     if (regErr || panErr || darpanErr) return;
 
     setSaving(true);
@@ -237,9 +256,16 @@ export const NgoOnboarding = () => {
                     required
                     placeholder="e.g. Hope Foundation"
                     value={organizationName}
-                    onChange={(e) => setOrganizationName(e.target.value)}
+                    onChange={(e) => {
+                      setOrganizationName(e.target.value);
+                      const err = validateField('organizationName', e.target.value);
+                      setFieldErrors(prev => ({ ...prev, organizationName: err }));
+                    }}
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
+                  {fieldErrors.organizationName && (
+                    <p className="mt-1 text-xs text-brand-error">{fieldErrors.organizationName}</p>
+                  )}
                 </div>
 
                 <div>
@@ -253,7 +279,9 @@ export const NgoOnboarding = () => {
                     value={registrationNumber}
                     onChange={(e) => {
                       const val = e.target.value.replace(/\D/g, '').slice(0, 9);
-                      handleFieldChange('registrationNumber', val, setRegistrationNumber);
+                      setRegistrationNumber(val);
+                      const err = validateField('registrationNumber', val);
+                      setFieldErrors(prev => ({ ...prev, registrationNumber: err }));
                     }}
                     className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                   />
@@ -269,17 +297,26 @@ export const NgoOnboarding = () => {
                   <label className="block text-xs font-semibold text-brand-dark uppercase mb-1">
                     PAN Number <span className="text-gray-400 font-normal">(Optional)</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. ABCDE1234F"
-                    maxLength={10}
-                    value={panNumber}
-                    onChange={(e) => {
-                      const val = e.target.value.toUpperCase().slice(0, 10);
-                      handleFieldChange('panNumber', val, setPanNumber);
-                    }}
-                    className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
-                  />
+                  {isEditMode ? (
+                    <div className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-gray-600 bg-gray-50">
+                      {panNumber || '—'}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="e.g. ABCDE1234F"
+                      maxLength={10}
+                      value={panNumber}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase().slice(0, 10);
+                        setPanNumber(val);
+                        handleFieldChange('panNumber', val, () => {});
+                        const err = validateField('panNumber', val);
+                        setFieldErrors(prev => ({ ...prev, panNumber: err }));
+                      }}
+                      className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                    />
+                  )}
                   {fieldErrors.panNumber && (
                     <p className="mt-1 text-xs text-brand-error">{fieldErrors.panNumber}</p>
                   )}
@@ -289,14 +326,26 @@ export const NgoOnboarding = () => {
                   <label className="block text-xs font-semibold text-brand-dark uppercase mb-1">
                     NITI Aayog Darpan ID <span className="text-gray-400 font-normal">(Optional)</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. AB/2021/012345"
-                    maxLength={16}
-                    value={darpanId}
-                    onChange={(e) => handleFieldChange('darpanId', e.target.value, setDarpanId)}
-                    className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
-                  />
+                  {isEditMode ? (
+                    <div className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-gray-600 bg-gray-50">
+                      {darpanId || '—'}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="e.g. GJ/2017/0168501"
+                      maxLength={16}
+                      value={darpanId}
+                      onChange={(e) => {
+                        const val = e.target.value.trim().toUpperCase();
+                        setDarpanId(val);
+                        handleFieldChange('darpanId', val, () => {});
+                        const err = validateField('darpanId', val);
+                        setFieldErrors(prev => ({ ...prev, darpanId: err }));
+                      }}
+                      className="w-full px-3 py-2 border border-brand-border rounded-md text-xs text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                    />
+                  )}
                   {fieldErrors.darpanId && (
                     <p className="mt-1 text-xs text-brand-error">{fieldErrors.darpanId}</p>
                   )}

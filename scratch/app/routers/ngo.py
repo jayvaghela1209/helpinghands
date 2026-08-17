@@ -29,25 +29,46 @@ class NgoProfileCreateUpdate(BaseModel):
     darpan_id: Optional[str] = Field(None, max_length=16)
     focus_areas: List[str] = []
 
-    @field_validator('registration_number')
+    @field_validator('organization_name', mode='before')
+    @classmethod
+    def validate_organization_name(cls, v):
+        if v is None:
+            return v
+        v = str(v).strip()
+        if not v:
+            raise ValueError('Organization Name cannot be empty or whitespace only.')
+        if re.search(r'\d', v):
+            raise ValueError('Organization Name must not contain digits.')
+        return v
+
+    @field_validator('registration_number', mode='before')
     @classmethod
     def validate_registration_number(cls, v):
+        if v is None or v == '':
+            return v
+        v = str(v).strip()
         if v and not re.fullmatch(r'\d{1,9}', v):
             raise ValueError('Registration number must contain maximum 9 numeric digits only.')
         return v
 
-    @field_validator('darpan_id')
+    @field_validator('darpan_id', mode='before')
     @classmethod
     def validate_darpan_id(cls, v):
-        if v and (len(v) < 14 or len(v) > 16):
-            raise ValueError('NGO Darpan ID must be between 14 and 16 characters.')
+        if v is None or v == '':
+            return v
+        v = str(v).strip().upper()
+        if v and not re.fullmatch(r'^[A-Z]{2}/[0-9]{4}/[0-9]{7}$', v):
+            raise ValueError('Enter a valid NGO DARPAN ID, e.g. GJ/2017/0168501.')
         return v
 
-    @field_validator('pan_number')
+    @field_validator('pan_number', mode='before')
     @classmethod
     def validate_pan_number(cls, v):
-        if v and len(v) != 10:
-            raise ValueError('PAN number must be exactly 10 characters.')
+        if v is None or v == '':
+            return v
+        v = str(v).strip().upper()
+        if v and not re.fullmatch(r'^[A-Z]{5}[0-9]{4}[A-Z]$', v):
+            raise ValueError('PAN number must be 10 characters in format like AACTS0036Q.')
         return v
 
 @router.get("/focus-areas")
@@ -97,18 +118,17 @@ async def create_or_update_ngo_profile(
                 detail=f"Invalid focus area '{fa}'. Allowed values: {ALLOWED_FOCUS_AREAS}"
             )
 
-    check_query = text("SELECT id FROM ngo_profiles WHERE user_id = :user_id")
+    check_query = text("SELECT id, darpan_id, pan_number FROM ngo_profiles WHERE user_id = :user_id")
     res = await db.execute(check_query, {"user_id": current_user["id"]})
     existing = res.mappings().first()
 
     try:
         if existing:
+            # UPDATE: darpan_id and pan_number are immutable and not updated
             update_query = text("""
                 UPDATE ngo_profiles
                 SET organization_name = :organization_name,
                     registration_number = :registration_number,
-                    pan_number = :pan_number,
-                    darpan_id = :darpan_id,
                     focus_areas = :focus_areas,
                     updated_at = NOW()
                 WHERE user_id = :user_id
@@ -118,8 +138,6 @@ async def create_or_update_ngo_profile(
                 "user_id": current_user["id"],
                 "organization_name": request.organization_name,
                 "registration_number": request.registration_number,
-                "pan_number": request.pan_number,
-                "darpan_id": request.darpan_id,
                 "focus_areas": request.focus_areas
             })
             await db.commit()
@@ -127,18 +145,18 @@ async def create_or_update_ngo_profile(
             res_dict["has_profile"] = True
             return res_dict
         else:
-            # Auto-approve NGOs so they appear in Browse NGOs immediately
+            # CREATE: Accept darpan_id and pan_number on first profile creation
             insert_query = text("""
-                INSERT INTO ngo_profiles (user_id, organization_name, registration_number, pan_number, darpan_id, focus_areas, verification_status)
-                VALUES (:user_id, :organization_name, :registration_number, :pan_number, :darpan_id, :focus_areas, 'approved')
+                INSERT INTO ngo_profiles (user_id, organization_name, registration_number, darpan_id, pan_number, focus_areas, verification_status)
+                VALUES (:user_id, :organization_name, :registration_number, :darpan_id, :pan_number, :focus_areas, 'approved')
                 RETURNING *
             """)
             inserted = await db.execute(insert_query, {
                 "user_id": current_user["id"],
                 "organization_name": request.organization_name,
                 "registration_number": request.registration_number,
-                "pan_number": request.pan_number,
                 "darpan_id": request.darpan_id,
+                "pan_number": request.pan_number,
                 "focus_areas": request.focus_areas
             })
             await db.commit()
