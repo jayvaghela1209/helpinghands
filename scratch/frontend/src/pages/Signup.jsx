@@ -390,6 +390,7 @@ export const Signup = () => {
                     id="phone"
                     type="text"
                     value={phone}
+                    required
                     onChange={e => {
                       setPhone(e.target.value);
                       const err = validateField('phone', e.target.value);
@@ -409,6 +410,7 @@ export const Signup = () => {
                   <select
                     id="city"
                     value={city}
+                    required
                     onChange={e => {
                       setCity(e.target.value);
                       const err = validateField('city', e.target.value);
@@ -482,6 +484,7 @@ export const Signup = () => {
                     <input
                       id="registrationNo"
                       type="text"
+                      required
                       value={registrationNo}
                       maxLength={9}
                       onChange={e => {
@@ -507,6 +510,7 @@ export const Signup = () => {
                     <input
                       id="darpanId"
                       type="text"
+                      required
                       value={darpanId}
                       onChange={e => {
                         const val = e.target.value.trim().toUpperCase();
@@ -529,6 +533,7 @@ export const Signup = () => {
                       id="panNumber"
                       type="text"
                       value={panNumber}
+                      required
                       maxLength={10}
                       onChange={e => {
                         const val = e.target.value.toUpperCase().slice(0, 10);
@@ -606,6 +611,7 @@ export const Signup = () => {
                       id="cinNumber"
                       type="text"
                       value={cinNumber}
+                      required
                       maxLength={21}
                       onChange={e => {
                         const val = e.target.value.toUpperCase().slice(0, 21);
@@ -628,6 +634,7 @@ export const Signup = () => {
                   <input
                     id="csrFocusAreas"
                     type="text"
+                    required
                     value={csrFocusAreas}
                     onChange={e => setCsrFocusAreas(e.target.value)}
                     className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
