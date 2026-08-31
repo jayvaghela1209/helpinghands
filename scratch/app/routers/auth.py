@@ -2,6 +2,7 @@
 import os
 import httpx
 import jwt
+from jwt import PyJWKClient
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 # pyrefly: ignore [missing-import]
@@ -16,10 +17,9 @@ from app.schemas.auth import SignupRequest, UserResponse, UserRole, LoginRequest
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 # Env parameters
-SUPABASE_URL = os.getenv("SUPABASE_URL", "http://localhost:54321")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "placeholder-anon-key")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "super-secret-jwt-key")
 
 security = HTTPBearer()
 
@@ -28,33 +28,34 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db)
 ):
     token = credentials.credentials
-    try:
-        # Decode and verify Supabase JWT token
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"verify_aud": False}  # Supabase uses "authenticated" as audience
+
+    # Ask Supabase Auth to validate the access token
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {token}",
+            },
+            timeout=10.0,
         )
-    except jwt.ExpiredSignatureError:
+
+    if response.status_code != 200:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired"
+            detail="Invalid Supabase token"
         )
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {str(e)}"
-        )
-        
-    user_id = payload.get("sub")
+
+    supabase_user = response.json()
+    user_id = supabase_user.get("id")
+
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing sub claim in token"
+            detail="Missing user ID"
         )
-        
-    # Fetch from users database table with organization and company names
+
+    # Now find the application user in your database
     query = text("""
         SELECT u.id, u.role, u.name, u.email, u.phone, u.city, u.created_at,
                np.organization_name,
@@ -64,15 +65,16 @@ async def get_current_user(
         LEFT JOIN corporate_profiles cp ON u.id = cp.user_id
         WHERE u.id = :user_id
     """)
+
     result = await db.execute(query, {"user_id": user_id})
     user = result.mappings().first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not registered in database"
         )
-        
+
     return user
 
 def require_role(allowed_roles: list[UserRole]):
