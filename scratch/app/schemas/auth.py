@@ -88,8 +88,8 @@ class SignupRequest(BaseModel):
         if v is None or v == '':
             return v
         v = str(v).strip()
-        if v and not re.fullmatch(r'\d{1,9}', v):
-            raise ValueError('Registration number must contain maximum 9 numeric digits only.')
+        if v and not re.fullmatch(r'\d{9}', v):
+            raise ValueError('Registration number must be exactly 9 numeric digits.')
         return v
 
     @field_validator('darpan_id', mode='before')
