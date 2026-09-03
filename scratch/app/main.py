@@ -11,7 +11,8 @@ from app.routers import (
     attendance_router,
     csr_router,
     volunteer_router,
-    ngo_router
+    ngo_router,
+    platform_operator_router
 )
 
 app = FastAPI(
@@ -48,6 +49,7 @@ app.include_router(attendance_router)
 app.include_router(csr_router)
 app.include_router(volunteer_router)
 app.include_router(ngo_router)
+app.include_router(platform_operator_router)
 
 # Health check endpoint
 @app.get("/health")

@@ -47,8 +47,8 @@ class NgoProfileCreateUpdate(BaseModel):
         if v is None or v == '':
             return v
         v = str(v).strip()
-        if v and not re.fullmatch(r'\d{1,9}', v):
-            raise ValueError('Registration number must contain maximum 9 numeric digits only.')
+        if v and not re.fullmatch(r'\d{9}', v):
+            raise ValueError('Registration number must be exactly 9 numeric digits.')
         return v
 
     @field_validator('darpan_id', mode='before')
@@ -148,7 +148,7 @@ async def create_or_update_ngo_profile(
             # CREATE: Accept darpan_id and pan_number on first profile creation
             insert_query = text("""
                 INSERT INTO ngo_profiles (user_id, organization_name, registration_number, darpan_id, pan_number, focus_areas, verification_status)
-                VALUES (:user_id, :organization_name, :registration_number, :darpan_id, :pan_number, :focus_areas, 'approved')
+                VALUES (:user_id, :organization_name, :registration_number, :darpan_id, :pan_number, :focus_areas, 'pending')
                 RETURNING *
             """)
             inserted = await db.execute(insert_query, {

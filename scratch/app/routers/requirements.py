@@ -12,7 +12,7 @@ from app.schemas.auth import UserRole
 
 router = APIRouter(prefix="/api/requirements", tags=["Requirements"])
 
-DEFAULT_ATTENDANCE_RADIUS = 300.0
+DEFAULT_ATTENDANCE_RADIUS = 10000.0
 
 class RequirementCreate(BaseModel):
     title: str = Field(..., max_length=200)
@@ -95,8 +95,32 @@ async def create_requirement(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_role([UserRole.ngo]))
 ):
+    # Enforce: only Platform-Operator-verified NGOs may post requirements.
+    # This check is backend-authoritative — hiding the button in the frontend
+    # is supplementary, not the primary guard.
+    ngo_status_query = text("""
+        SELECT verification_status
+        FROM ngo_profiles
+        WHERE user_id = :user_id
+    """)
+    ngo_status_res = await db.execute(ngo_status_query, {"user_id": current_user["id"]})
+    ngo_row = ngo_status_res.mappings().first()
+
+    if not ngo_row:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="NGO profile not found. Please complete your onboarding first."
+        )
+    if ngo_row["verification_status"] != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Your NGO account is pending verification. "
+                "You cannot post requirements until the Platform Operator approves your organization."
+            )
+        )
+
     # Location fields are all required and bounds-validated by the Pydantic schema.
-    # No additional sentinel check here — (0.0, 0.0) is a valid coordinate.
     try:
         query = text("""
             INSERT INTO requirements (ngo_profile_id, title, description, category, skill_tags, seats_total, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status)

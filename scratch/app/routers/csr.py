@@ -29,19 +29,35 @@ async def create_pledge(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_role([UserRole.corporate]))
 ):
+    # Enforce: only Platform-Operator-verified corporates may pledge funds.
+    # This is a backend-authoritative check; frontend UI restrictions are supplementary.
+    corp_status_query = text("""
+        SELECT id, verification_status
+        FROM corporate_profiles
+        WHERE user_id = :user_id
+    """)
+    corp_status_res = await db.execute(corp_status_query, {"user_id": current_user["id"]})
+    corp_status_row = corp_status_res.mappings().first()
+
+    if not corp_status_row:
+        raise HTTPException(status_code=400, detail="Corporate profile not found for user")
+
+    if corp_status_row["verification_status"] != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Your company account is pending verification. "
+                "You cannot pledge funds until the Platform Operator approves your organization."
+            )
+        )
+
+    corporate_profile_id = corp_status_row["id"]
+
     # Verify NGO profile exists (using its profile ID)
     ngo_query = text("SELECT id FROM ngo_profiles WHERE id = :ngo_profile_id")
     ngo_res = await db.execute(ngo_query, {"ngo_profile_id": request.ngo_id})
     if not ngo_res.mappings().first():
         raise HTTPException(status_code=404, detail="NGO profile not found")
-
-    # Get corporate_profile_id for current user
-    corp_query = text("SELECT id FROM corporate_profiles WHERE user_id = :user_id")
-    corp_res = await db.execute(corp_query, {"user_id": current_user["id"]})
-    corp_row = corp_res.mappings().first()
-    if not corp_row:
-        raise HTTPException(status_code=400, detail="Corporate profile not found for user")
-    corporate_profile_id = corp_row["id"]
 
     # Handle volunteer hours default of 0.0 when None
     pledged_hours = request.pledged_hours if request.pledged_hours is not None else 0.0

@@ -73,6 +73,126 @@ export const CSRReport = () => {
     window.print();
   };
 
+  // ── CSV export ──
+  // Builds a multi-section CSV from the same reportData used by the PDF.
+  const handleDownloadCSV = () => {
+    if (!reportData) return;
+
+    const escape = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = String(val);
+      // Wrap in quotes if the value contains a comma, quote, or newline
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    };
+
+    const row = (...cells) => cells.map(escape).join(',') + '\r\n';
+
+    let csv = '';
+
+    // ── Section 1: Corporate Info & Summary ──
+    csv += row('CORPORATE CSR COMPLIANCE REPORT');
+    csv += row('Company', corpInfo.company_name);
+    csv += row('Email', corpInfo.email);
+    csv += row('Report Year', reportData.report_year);
+    csv += row('Generated At', formattedGeneratedDate);
+    csv += row('');
+
+    // ── Section 2: Executive Summary ──
+    csv += row('EXECUTIVE SUMMARY');
+    csv += row('Metric', 'Value');
+    csv += row('Total CSR Funding (INR)', cards.total_funding);
+    csv += row('Employee Volunteer Hours', cards.employee_volunteer_hours);
+    csv += row('NGOs Supported', cards.ngos_supported);
+    csv += row('Sponsored Requirements', cards.sponsored_requirements);
+    csv += row('Total CSR Pledges', cards.total_csr_pledges);
+    csv += row('Approved CSR Funding (INR)', cards.approved_csr_funding);
+    csv += row('Pending CSR Funding (INR)', cards.pending_csr_funding);
+    csv += row('Avg Funding per NGO (INR)', cards.avg_funding_per_ngo);
+    csv += row('');
+
+    // ── Section 3: Monthly Data ──
+    csv += row('MONTHLY BREAKDOWN');
+    csv += row('Month', 'Funding (INR)', 'Volunteer Hours', 'Cumulative Funding (INR)');
+    (reportData.monthly_data || []).forEach(m => {
+      csv += row(m.month, m.funding, m.hours, m.cumulative_funding);
+    });
+    csv += row('');
+
+    // ── Section 4: NGO Distribution ──
+    csv += row('NGO FUNDING DISTRIBUTION');
+    csv += row('NGO Name', 'Amount (INR)');
+    (reportData.ngo_distribution || []).forEach(n => {
+      csv += row(n.ngo_name, n.amount);
+    });
+    csv += row('');
+
+    // ── Section 5: CSR Funding Summary table ──
+    csv += row('1. CSR FUNDING SUMMARY BY NGO');
+    csv += row('NGO Name', 'Total Funding (INR)', 'Number of Donations', 'Latest Donation Date');
+    (tables.funding_summary || []).forEach(r => {
+      csv += row(
+        r.ngo_name,
+        r.total_funding,
+        r.donation_count,
+        r.latest_donation_date ? new Date(r.latest_donation_date).toLocaleDateString('en-IN') : ''
+      );
+    });
+    csv += row('');
+
+    // ── Section 6: Requirement Sponsorship Summary ──
+    csv += row('2. REQUIREMENT SPONSORSHIP SUMMARY');
+    csv += row('Requirement', 'NGO', 'Sponsored Amount (INR)', 'Status', 'Sponsorship Date');
+    (tables.sponsorship_summary || []).forEach(r => {
+      csv += row(
+        r.requirement_name,
+        r.ngo_name,
+        r.sponsored_amount,
+        r.status,
+        r.sponsorship_date ? new Date(r.sponsorship_date).toLocaleDateString('en-IN') : ''
+      );
+    });
+    csv += row('');
+
+    // ── Section 7: Employee Volunteer Summary ──
+    csv += row('3. EMPLOYEE VOLUNTEER SUMMARY');
+    csv += row('Employee', 'NGO', 'Volunteer Hours', 'Activity Date');
+    (tables.volunteer_summary || []).forEach(r => {
+      csv += row(
+        r.employee_name,
+        r.ngo_name,
+        r.volunteer_hours,
+        r.activity_date ? new Date(r.activity_date).toLocaleDateString('en-IN') : ''
+      );
+    });
+    csv += row('');
+
+    // ── Section 8: CSR Pledges Audit Log ──
+    csv += row('4. CSR PLEDGES AUDIT LOG');
+    csv += row('Pledge', 'Amount (INR)', 'Status', 'Created Date');
+    (tables.pledges || []).forEach(r => {
+      csv += row(
+        r.pledge_title,
+        r.amount,
+        r.status,
+        r.created_date ? new Date(r.created_date).toLocaleDateString('en-IN') : ''
+      );
+    });
+
+    // Trigger download
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `CSR_Report_${corpInfo.company_name.replace(/\s+/g, '_')}_FY${reportData.report_year}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Safely extract summary metrics and table data from response
   const cards = reportData?.summary_cards || {
     total_funding: 0,
@@ -235,6 +355,16 @@ export const CSRReport = () => {
               >
                 <Download className="w-4 h-4" />
                 <span>Download PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadCSV}
+                disabled={!reportData}
+                className="bg-white border border-brand-border text-brand-dark hover:bg-brand-secondary text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <FileText className="w-4 h-4 text-brand-primary" />
+                <span>Download CSV</span>
               </button>
             </form>
 

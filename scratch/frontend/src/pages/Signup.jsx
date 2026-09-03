@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export const Signup = () => {
   const [role, setRole] = useState('volunteer'); // volunteer, ngo, corporate
@@ -25,6 +26,8 @@ export const Signup = () => {
   const [cinNumber, setCinNumber] = useState('');
   const [csrFocusAreas, setCsrFocusAreas] = useState('');
   
+  const [confirmPassword, setConfirmPassword] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -33,7 +36,7 @@ export const Signup = () => {
   const [fieldErrors, setFieldErrors] = useState({});
 
   // Validate a single field and return the error string (or '' if valid)
-  const validateField = (fieldName, value) => {
+  const validateField = (fieldName, value, extra) => {
     switch (fieldName) {
       case 'password': {
         if (value) {
@@ -46,6 +49,12 @@ export const Signup = () => {
           if (!/[!@#$%^&*()_+\-=\[\]{};:'",.< >?/\\|`~]/.test(value)) {
             return 'Password must be at least 8 characters and contain at least one uppercase letter and one special character.';
           }
+        }
+        return '';
+      }
+      case 'confirmPassword': {
+        if (value !== undefined && value !== extra) {
+          return 'Passwords do not match.';
         }
         return '';
       }
@@ -82,8 +91,8 @@ export const Signup = () => {
         return '';
       }
       case 'registrationNo': {
-        if (value && !/^\d{1,9}$/.test(value)) {
-          return 'Registration number must contain maximum 9 digits (numbers only).';
+        if (value && !/^\d{9}$/.test(value)) {
+          return 'Registration number must be exactly 9 numeric digits.';
         }
         return '';
       }
@@ -164,6 +173,7 @@ export const Signup = () => {
     
     // Common validations for all roles
     newErrors.password = validateField('password', password);
+    newErrors.confirmPassword = validateField('confirmPassword', confirmPassword, password);
     newErrors.city = validateField('city', city);
     
     if (role === 'volunteer') {
@@ -226,7 +236,7 @@ export const Signup = () => {
     }
     
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001';
       const response = await fetch(`${apiUrl}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,8 +246,44 @@ export const Signup = () => {
       if (!response.ok) {
         throw new Error(result.detail || 'Registration failed.');
       }
-      setSuccessMsg('Account registered successfully! Redirecting to login page...');
-      setTimeout(() => navigate('/login'), 3000);
+
+      // The signup endpoint now returns an access_token alongside the user profile.
+      // Store the session in the same format the supabase mock client reads, then
+      // trigger signInWithPassword so AuthContext state is populated without the
+      // user having to type their credentials again.
+      if (result.access_token) {
+        const session = {
+          access_token: result.access_token,
+          token_type: 'bearer',
+          user: { id: result.id, email: result.email },
+        };
+        localStorage.setItem('hh_session', JSON.stringify(session));
+        localStorage.setItem('authToken', result.access_token);
+
+        // Use the existing supabase mock signInWithPassword to fully populate
+        // AuthContext (it calls /api/auth/login which validates the account).
+        const { error: loginErr } = await supabase.auth.signInWithPassword({
+          email: signupData.email,
+          password: signupData.password,
+        });
+
+        if (loginErr) {
+          // Login after registration failed — still registered, just redirect to login
+          console.warn('Auto-login after signup failed:', loginErr.message);
+          setSuccessMsg('Account registered successfully! Please log in.');
+          setTimeout(() => navigate('/login'), 2000);
+          return;
+        }
+      }
+
+      // Navigate to the appropriate dashboard based on role
+      const dashboardRoutes = {
+        volunteer: '/volunteer-dashboard',
+        ngo: '/ngo-dashboard',
+        corporate: '/corporate-dashboard',
+      };
+      const dest = dashboardRoutes[role] || '/';
+      navigate(dest, { replace: true });
     } catch (err) {
       setErrorMsg(err.message || 'An error occurred during registration.');
       console.error(err);
@@ -314,28 +360,30 @@ export const Signup = () => {
               </div>
             </div>
             {/* Core credentials */}
+            {/* Row 1: Email — full width */}
+            <div>
+              <label htmlFor="email" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Email Address
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={e => {
+                  setEmail(e.target.value);
+                  const err = validateField('email', e.target.value);
+                  setFieldErrors(prev => ({ ...prev, email: err }));
+                }}
+                className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                placeholder="email@example.com"
+              />
+              {fieldErrors.email && (
+                <p className="mt-1 text-xs text-brand-error">{fieldErrors.email}</p>
+              )}
+            </div>
+            {/* Row 2: Password and Confirm Password side by side */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="email" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Email Address
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={e => {
-                    setEmail(e.target.value);
-                    const err = validateField('email', e.target.value);
-                    setFieldErrors(prev => ({ ...prev, email: err }));
-                  }}
-                  className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
-                  placeholder="email@example.com"
-                />
-                {fieldErrors.email && (
-                  <p className="mt-1 text-xs text-brand-error">{fieldErrors.email}</p>
-                )}
-              </div>
               <div>
                 <label htmlFor="password" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Password
@@ -348,13 +396,36 @@ export const Signup = () => {
                   onChange={e => {
                     setPassword(e.target.value);
                     const err = validateField('password', e.target.value);
-                    setFieldErrors(prev => ({ ...prev, password: err }));
+                    // Re-validate confirm password whenever password changes
+                    const confErr = validateField('confirmPassword', confirmPassword, e.target.value);
+                    setFieldErrors(prev => ({ ...prev, password: err, confirmPassword: confErr }));
                   }}
                   className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
                   placeholder="Min 8 characters"
                 />
                 {fieldErrors.password && (
                   <p className="mt-1 text-xs text-brand-error">{fieldErrors.password}</p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="confirmPassword" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Confirm Password
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={e => {
+                    setConfirmPassword(e.target.value);
+                    const err = validateField('confirmPassword', e.target.value, password);
+                    setFieldErrors(prev => ({ ...prev, confirmPassword: err }));
+                  }}
+                  className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                  placeholder="Re-enter password"
+                />
+                {fieldErrors.confirmPassword && (
+                  <p className="mt-1 text-xs text-brand-error">{fieldErrors.confirmPassword}</p>
                 )}
               </div>
             </div>

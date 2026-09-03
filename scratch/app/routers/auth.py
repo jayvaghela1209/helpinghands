@@ -85,7 +85,7 @@ def require_role(allowed_roles: list[UserRole]):
         return current_user
     return dependency
 
-@router.post("/signup", response_model=UserResponse)
+@router.post("/signup")
 async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
     import uuid as uuid_mod
     
@@ -188,10 +188,10 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
                     "skill_tags": request.skill_tags
                 })
             elif request.role == UserRole.ngo:
-                # Auto-approve NGOs at registration so they appear in Browse NGOs immediately
+                # Set verification_status to 'pending' — Platform Operator must approve
                 profile_insert = text("""
                     INSERT INTO ngo_profiles (user_id, organization_name, registration_number, darpan_id, pan_number, focus_areas, verification_status)
-                    VALUES (:user_id, :organization_name, :registration_number, :darpan_id, :pan_number, :focus_areas, 'approved')
+                    VALUES (:user_id, :organization_name, :registration_number, :darpan_id, :pan_number, :focus_areas, 'pending')
                 """)
                 await db.execute(profile_insert, {
                     "user_id": user_uuid,
@@ -224,7 +224,8 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
             detail=f"Database profile creation failed: {str(db_err)}"
         )
 
-    # Fetch and return the newly created user
+    # Fetch the newly created user and also issue a JWT so the frontend can
+    # auto-login immediately after registration without a second round-trip.
     query = text("""
         SELECT u.id, u.role, u.name, u.email, u.phone, u.city, u.created_at,
                np.organization_name,
@@ -236,7 +237,23 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
     """)
     result = await db.execute(query, {"user_id": user_uuid})
     new_user = result.mappings().first()
-    return new_user
+
+    from datetime import datetime, timezone
+    access_token = jwt.encode({
+        "sub": str(new_user["id"]),
+        "email": new_user["email"],
+        "role": "authenticated",
+        "aud": "authenticated",
+        "exp": int(datetime.now(timezone.utc).timestamp() + 86400)
+    }, SUPABASE_JWT_SECRET, algorithm="HS256")
+
+    # Return both the user profile fields AND an access_token so the
+    # frontend can immediately store the session and skip the login page.
+    return {
+        **dict(new_user),
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user = Depends(get_current_user)):

@@ -27,12 +27,24 @@ import CSRFunding from './pages/CSRFunding';
 import RequirementSponsorship from './pages/RequirementSponsorship';
 import AdminDashboard from './pages/AdminDashboard';
 import CSRReport from './pages/CSRReport';
+import PlatformOperatorLogin from './pages/PlatformOperatorLogin';
+import PlatformOperatorDashboard from './pages/PlatformOperatorDashboard';
 
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <Routes>
+      <Routes>
+
+        {/* ── Platform Operator routes — completely isolated from AuthProvider ── */}
+        <Route path="/admin/admin" element={<PlatformOperatorLogin />} />
+        <Route path="/admin/dashboard" element={<PlatformOperatorDashboard />} />
+
+        {/* ── All normal application routes — wrapped in AuthProvider ── */}
+        <Route
+          path="*"
+          element={
+            <AuthProvider>
+              <Routes>
 
           {/* Public pages — no sidebar (Login / Signup only) */}
           <Route element={<PublicLayout />}>
@@ -86,8 +98,12 @@ function App() {
             <Route path="*" element={<NotFound />} />
 
           </Route>
-        </Routes>
-      </AuthProvider>
+          </Routes>
+        </AuthProvider>
+        }
+      />
+
+      </Routes>
     </BrowserRouter>
   );
 }

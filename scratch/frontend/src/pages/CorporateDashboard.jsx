@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Landmark, Timer, Clipboard, Award } from 'lucide-react';
+import { Landmark, Timer, Clipboard, Award, AlertTriangle } from 'lucide-react';
 
 export const CorporateDashboard = () => {
   const { profile } = useAuth();
@@ -9,6 +9,9 @@ export const CorporateDashboard = () => {
   // State for pledges fetched from backend
   const [pledges, setPledges] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Corporate verification status fetched from backend
+  const [corpVerificationStatus, setCorpVerificationStatus] = useState('pending');
 
   // CSR Report State
   const [reportYear, setReportYear] = useState('2026');
@@ -28,49 +31,31 @@ export const CorporateDashboard = () => {
     }
   };
 
-  // Handle CSR Report generation API call
-  const handleGenerateReport = async (e) => {
-    e.preventDefault();
-    setGeneratingReport(true);
-    setReportError('');
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const token = getToken();
-      const res = await fetch(`${apiUrl}/api/csr/reports/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ report_year: parseInt(reportYear, 10) }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Failed to generate report');
-      }
-
-      const data = await res.json();
-      setReportData(data);
-    } catch (err) {
-      setReportError(err.message || 'Error generating CSR report.');
-    } finally {
-      setGeneratingReport(false);
-    }
-  };
-
-  // Fetch all pledges for this corporate user on mount
+  // Fetch all pledges and corp verification status on mount
   useEffect(() => {
-    const fetchPledges = async () => {
+    const fetchData = async () => {
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001';
         const token = getToken();
-        const res = await fetch(`${apiUrl}/api/csr/my-pledges`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
+        const headers = { Authorization: `Bearer ${token}` };
+
+        // Fetch pledges and CSR dashboard in parallel
+        const [pledgesRes, dashRes] = await Promise.all([
+          fetch(`${apiUrl}/api/csr/my-pledges`, { headers }),
+          fetch(`${apiUrl}/api/csr/dashboard`, { headers }),
+        ]);
+
+        if (pledgesRes.ok) {
+          const data = await pledgesRes.json();
           setPledges(data);
+        }
+
+        // Extract verification status from the CSR report endpoint's corporate_info
+        // (reuse the existing dashboard endpoint which already queries corporate_profiles)
+        if (dashRes.ok) {
+          // dashboard doesn't return verification_status directly, fetch from reports/generate
+          // Instead we read it from the corp_info returned by the CSR report if available.
+          // Fallback: use the auth /me endpoint's existing fields.
         }
       } catch (e) {
         // silently fail, dashboard still usable
@@ -78,8 +63,32 @@ export const CorporateDashboard = () => {
         setLoading(false);
       }
     };
-    fetchPledges();
+
+    // Also fetch verification status from the CSR report generate endpoint
+    // (cheapest way since it already returns corp_info with verification_status)
+    const fetchCorpStatus = async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+        const token = getToken();
+        const res = await fetch(`${apiUrl}/api/csr/reports/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ report_year: 2026 }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setCorpVerificationStatus(data.corporate_info?.verification_status || 'pending');
+        }
+      } catch (e) {
+        // leave as pending if fetch fails
+      }
+    };
+
+    fetchData();
+    fetchCorpStatus();
   }, []);
+
+  const isVerified = corpVerificationStatus === 'approved';
 
   // Separate general pledges (no requirement) from requirement sponsorships
   const generalPledges = pledges.filter((p) => !p.requirement_id);
@@ -89,10 +98,55 @@ export const CorporateDashboard = () => {
   const totalAmount = pledges.reduce((sum, p) => sum + (parseFloat(p.pledged_amount) || 0), 0);
   const totalHours = pledges.reduce((sum, p) => sum + (parseFloat(p.pledged_hours) || 0), 0);
 
+  // Handle CSR Report generation API call
+  const handleGenerateReport = async (e) => {
+    e.preventDefault();
+    setGeneratingReport(true);
+    setReportError('');
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+      const token = getToken();
+      const res = await fetch(`${apiUrl}/api/csr/reports/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ report_year: parseInt(reportYear, 10) }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to generate report');
+      }
+      const data = await res.json();
+      setReportData(data);
+      // Also update verification status from the freshly fetched corp info
+      if (data.corporate_info?.verification_status) {
+        setCorpVerificationStatus(data.corporate_info.verification_status);
+      }
+    } catch (err) {
+      setReportError(err.message || 'Error generating CSR report.');
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-brand-secondary">
       <main className="max-w-7xl mx-auto px-6 py-8">
         
+        {/* Pending verification banner */}
+        {!isVerified && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-md flex items-start space-x-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-amber-800">Verification Pending</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Your company account is pending verification. You cannot pledge funds until the Platform Operator approves your organization.
+                {corpVerificationStatus === 'rejected' && ' Your application has been rejected — please contact support.'}
+                {corpVerificationStatus === 'suspended' && ' Your account has been suspended — please contact support.'}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Header Section */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-brand-dark">Corporate CSR Portal</h1>
@@ -178,9 +232,15 @@ export const CorporateDashboard = () => {
                 <div className="p-8 text-center">
                   <p className="text-sm text-gray-500">No general CSR pledges found.</p>
                   <div className="mt-4 flex justify-center gap-4">
-                    <Link to="/browse-ngos" className="text-xs font-semibold text-brand-primary border border-brand-primary hover:bg-brand-secondary px-4 py-2 rounded-md transition-all">
-                      Browse Verified NGOs
-                    </Link>
+                    {isVerified ? (
+                      <Link to="/browse-ngos" className="text-xs font-semibold text-brand-primary border border-brand-primary hover:bg-brand-secondary px-4 py-2 rounded-md transition-all">
+                        Browse Verified NGOs
+                      </Link>
+                    ) : (
+                      <span className="text-xs font-semibold text-gray-400 border border-gray-200 px-4 py-2 rounded-md cursor-not-allowed" title="Verification required">
+                        Browse Verified NGOs (requires verification)
+                      </span>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -222,9 +282,15 @@ export const CorporateDashboard = () => {
                 <div className="p-8 text-center">
                   <p className="text-sm text-gray-500">No requirement sponsorships found.</p>
                   <div className="mt-4 flex justify-center gap-4">
-                    <Link to="/browse-ngos" className="text-xs font-semibold text-brand-primary border border-brand-primary hover:bg-brand-secondary px-4 py-2 rounded-md transition-all">
-                      Browse NGOs & Sponsor Requirements
-                    </Link>
+                    {isVerified ? (
+                      <Link to="/browse-ngos" className="text-xs font-semibold text-brand-primary border border-brand-primary hover:bg-brand-secondary px-4 py-2 rounded-md transition-all">
+                        Browse NGOs & Sponsor Requirements
+                      </Link>
+                    ) : (
+                      <span className="text-xs font-semibold text-gray-400 border border-gray-200 px-4 py-2 rounded-md cursor-not-allowed" title="Verification required">
+                        Browse NGOs (requires verification)
+                      </span>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -270,8 +336,14 @@ export const CorporateDashboard = () => {
                 </div>
                 <div>
                   <span className="text-gray-400 block uppercase font-semibold">Verification Status</span>
-                  <span className="inline-block mt-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border border-brand-accent text-brand-accent bg-brand-secondary rounded-md">
-                    Pending Admin Approval
+                  <span className={`inline-block mt-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-md ${
+                    corpVerificationStatus === 'approved'
+                      ? 'border-brand-success text-brand-success bg-green-50'
+                      : corpVerificationStatus === 'rejected' || corpVerificationStatus === 'suspended'
+                      ? 'border-brand-error text-brand-error bg-red-50'
+                      : 'border-brand-accent text-brand-accent bg-brand-secondary'
+                  }`}>
+                    {corpVerificationStatus === 'approved' ? 'Verified' : corpVerificationStatus === 'pending' ? 'Pending Approval' : corpVerificationStatus}
                   </span>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Briefcase, Users, Star, ClipboardList, Plus, MapPin, Calendar, Edit, Building2 } from 'lucide-react';
+import { Briefcase, Users, Star, ClipboardList, Plus, MapPin, Calendar, Edit, Building2, AlertTriangle } from 'lucide-react';
 
 export const NgoDashboard = () => {
   const { profile } = useAuth();
@@ -79,6 +79,9 @@ export const NgoDashboard = () => {
   const avgRating = ngoProfile?.avg_rating ? parseFloat(ngoProfile.avg_rating) : null;
   const ratingCount = ngoProfile?.rating_count ? parseInt(ngoProfile.rating_count, 10) : 0;
 
+  // NGO is allowed to post only when approved
+  const isVerified = verificationStatus === 'approved';
+
   // Build star string: filled stars + empty stars
   const renderStars = (rating) => {
     const filled = Math.round(rating);
@@ -88,6 +91,21 @@ export const NgoDashboard = () => {
   return (
     <div className="min-h-screen bg-brand-secondary">
       <main className="max-w-7xl mx-auto px-6 py-8">
+
+        {/* Pending verification banner */}
+        {!loading && !isVerified && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-md flex items-start space-x-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-amber-800">Verification Pending</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Your account is pending verification. You cannot post requirements until the Platform Operator approves your organization.
+                {verificationStatus === 'rejected' && ' Your application has been rejected — please contact support.'}
+                {verificationStatus === 'suspended' && ' Your account has been suspended — please contact support.'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Header Section */}
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -112,7 +130,9 @@ export const NgoDashboard = () => {
             </Link>
             <button
               onClick={() => navigate('/post-requirement')}
-              className="flex items-center space-x-2 text-xs font-bold text-white bg-brand-primary hover:bg-opacity-90 px-4 py-2.5 rounded-md transition-all cursor-pointer shadow-sm"
+              disabled={!isVerified}
+              title={!isVerified ? 'Verification required to post requirements' : undefined}
+              className="flex items-center space-x-2 text-xs font-bold text-white bg-brand-primary hover:bg-opacity-90 px-4 py-2.5 rounded-md transition-all cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-4 h-4" />
               <span>Post New Requirement</span>
