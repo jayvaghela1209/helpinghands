@@ -1,5 +1,7 @@
 # Python
+.venv/
 venv/
+scratch/.venv/
 __pycache__/
 *.pyc
 .env
