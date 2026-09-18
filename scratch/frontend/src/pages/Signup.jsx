@@ -68,13 +68,16 @@ export const Signup = () => {
         return '';
       }
       case 'city': {
-        if (value && value !== '') {
-          if (!APPROVED_CITIES.includes(value)) {
-            return 'Please select a valid city.';
-          }
-        }
-        return '';
-      }
+  if (!value || value === '') {
+    return 'Please select a city.';
+  }
+
+  if (!APPROVED_CITIES.includes(value)) {
+    return 'Please select a valid city.';
+  }
+
+  return '';
+}
       case 'email': {
         if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
           return 'Please enter a valid email address.';
@@ -244,7 +247,19 @@ export const Signup = () => {
       });
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.detail || 'Registration failed.');
+        // Normalise any duplicate-email variant to the clean user-facing message
+        const rawDetail = result.detail || '';
+        const lowerDetail = rawDetail.toLowerCase();
+        if (
+          lowerDetail.includes('already taken') ||
+          lowerDetail.includes('already registered') ||
+          lowerDetail.includes('already exists') ||
+          (lowerDetail.includes('unique') && lowerDetail.includes('email')) ||
+          lowerDetail.includes('duplicate key')
+        ) {
+          throw new Error('Email ID is already taken.');
+        }
+        throw new Error(rawDetail || 'Registration failed.');
       }
 
       // The signup endpoint now returns an access_token alongside the user profile.
@@ -620,6 +635,54 @@ export const Signup = () => {
                     )}
                   </div>
                 </div>
+                {/* NGO contact details row: phone + city */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="ngo-phone" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Phone Number
+                    </label>
+                    <input
+                      id="ngo-phone"
+                      type="text"
+                      value={phone}
+                      required
+                      onChange={e => {
+                        setPhone(e.target.value);
+                        const err = validateField('phone', e.target.value);
+                        setFieldErrors(prev => ({ ...prev, phone: err }));
+                      }}
+                      className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                      placeholder="e.g. 9999999999"
+                    />
+                    {fieldErrors.phone && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.phone}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="ngo-city" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      City
+                    </label>
+                    <select
+                      id="ngo-city"
+                      value={city}
+                      required
+                      onChange={e => {
+                        setCity(e.target.value);
+                        const err = validateField('city', e.target.value);
+                        setFieldErrors(prev => ({ ...prev, city: err }));
+                      }}
+                      className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                    >
+                      <option value="">Select City</option>
+                      {APPROVED_CITIES.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    {fieldErrors.city && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.city}</p>
+                    )}
+                  </div>
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                     Focus Areas
@@ -695,6 +758,54 @@ export const Signup = () => {
                     />
                     {fieldErrors.cinNumber && (
                       <p className="mt-1 text-xs text-brand-error">{fieldErrors.cinNumber}</p>
+                    )}
+                  </div>
+                </div>
+                {/* Corporate contact details row: phone + city */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="corp-phone" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Phone Number
+                    </label>
+                    <input
+                      id="corp-phone"
+                      type="text"
+                      value={phone}
+                      required
+                      onChange={e => {
+                        setPhone(e.target.value);
+                        const err = validateField('phone', e.target.value);
+                        setFieldErrors(prev => ({ ...prev, phone: err }));
+                      }}
+                      className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                      placeholder="e.g. 9999999999"
+                    />
+                    {fieldErrors.phone && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.phone}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="corp-city" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      City
+                    </label>
+                    <select
+                      id="corp-city"
+                      value={city}
+                      required
+                      onChange={e => {
+                        setCity(e.target.value);
+                        const err = validateField('city', e.target.value);
+                        setFieldErrors(prev => ({ ...prev, city: err }));
+                      }}
+                      className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none"
+                    >
+                      <option value="">Select City</option>
+                      {APPROVED_CITIES.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    {fieldErrors.city && (
+                      <p className="mt-1 text-xs text-brand-error">{fieldErrors.city}</p>
                     )}
                   </div>
                 </div>

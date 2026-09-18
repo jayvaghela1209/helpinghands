@@ -4,6 +4,94 @@ import { CheckCircle, AlertCircle, Clock, Flame, Star, ArrowLeft, Download, Awar
 import { api } from '../services/api';
 import { getAccuratePosition } from '../lib/getAccuratePosition';
 
+// ── IST offset in minutes (UTC+5:30) ────────────────────────────────────────
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+/**
+ * Returns the current date/time shifted to IST as a plain JS Date.
+ * Used only for display — the backend enforces the authoritative check.
+ */
+const nowIST = () => new Date(Date.now() + IST_OFFSET_MS - new Date().getTimezoneOffset() * 60000);
+
+/**
+ * Parse a "HH:MM:SS" or "HH:MM" time string into { hours, minutes }.
+ */
+const parseTime = (t) => {
+  if (!t) return null;
+  const parts = t.split(':');
+  return { hours: parseInt(parts[0], 10), minutes: parseInt(parts[1], 10) };
+};
+
+/**
+ * Format a "HH:MM:SS" time string to "10:00 AM" display format.
+ */
+const formatTime = (t) => {
+  const p = parseTime(t);
+  if (!p) return '';
+  const d = new Date(0);
+  d.setHours(p.hours, p.minutes, 0, 0);
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+/**
+ * Compute the volunteer-facing check-in window status.
+ * Returns one of: 'upcoming' | 'open' | 'ended' | 'unknown'
+ */
+const getCheckinWindowStatus = (eventDate, eventStartTime, eventEndTime) => {
+  if (!eventDate || !eventStartTime || !eventEndTime) return 'unknown';
+
+  // Build window boundaries as UTC timestamps matching IST wall-clock times.
+  // We use the raw date string (YYYY-MM-DD) and parse it in UTC to avoid
+  // browser local-timezone shifting the date.
+  const [year, month, day] = eventDate.split('-').map(Number);
+  const startP = parseTime(eventStartTime);
+  const endP   = parseTime(eventEndTime);
+
+  // Construct as UTC so that Date.UTC(y,m-1,d,h,min) gives us the IST wall-clock
+  // time as UTC (i.e. we pretend IST = UTC for the purpose of comparison because
+  // we also shift `now` by the same offset).
+  const windowStart = new Date(Date.UTC(year, month - 1, day, startP.hours, startP.minutes, 0));
+  const windowEnd   = new Date(Date.UTC(year, month - 1, day, endP.hours,   endP.minutes,   0));
+
+  // Current time expressed as a "UTC clock reading" of IST wall-clock time.
+  const nowAsIST = new Date(Date.now() + IST_OFFSET_MS - new Date().getTimezoneOffset() * 60000);
+  // Strip timezone offset to get a comparable UTC timestamp
+  const nowUTC = new Date(nowAsIST.toISOString().replace('Z', '+00:00'));
+
+  if (nowUTC < windowStart) return 'upcoming';
+  if (nowUTC >= windowEnd)  return 'ended';
+  return 'open';
+};
+
+/**
+ * Returns true when fewer than 48 hours remain until the event start (IST).
+ * Used for display-only withdrawal restriction — backend is authoritative.
+ */
+const isWithin48Hours = (eventDate, eventStartTime) => {
+  if (!eventDate || !eventStartTime) return false;
+  const [year, month, day] = eventDate.split('-').map(Number);
+  const startP = parseTime(eventStartTime);
+  const eventStartUTC = new Date(Date.UTC(year, month - 1, day, startP.hours, startP.minutes, 0));
+  const nowAsIST = new Date(Date.now() + IST_OFFSET_MS - new Date().getTimezoneOffset() * 60000);
+  const nowUTC = new Date(nowAsIST.toISOString().replace('Z', '+00:00'));
+  const diffMs = eventStartUTC - nowUTC;
+  return diffMs <= 48 * 60 * 60 * 1000;
+};
+
+/**
+ * Returns true when the event has not yet started (IST wall-clock).
+ * Used for display-only checkout restriction — backend is authoritative.
+ */
+const isBeforeEventStart = (eventDate, eventStartTime) => {
+  if (!eventDate || !eventStartTime) return false;
+  const [year, month, day] = eventDate.split('-').map(Number);
+  const startP = parseTime(eventStartTime);
+  const eventStartUTC = new Date(Date.UTC(year, month - 1, day, startP.hours, startP.minutes, 0));
+  const nowAsIST = new Date(Date.now() + IST_OFFSET_MS - new Date().getTimezoneOffset() * 60000);
+  const nowUTC = new Date(nowAsIST.toISOString().replace('Z', '+00:00'));
+  return nowUTC < eventStartUTC;
+};
+
 const RequirementDetails = () => {
   const { id } = useParams();
   const [requirement, setRequirement] = useState(null);
@@ -136,7 +224,16 @@ const RequirementDetails = () => {
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Check‑in failed');
+      if (!res.ok) {
+        // data.detail may be a nested object (e.g. distance check returns
+        // {detail: "...", distance: ..., allowed_radius: ...}) — extract the
+        // human-readable string rather than stringifying the whole object.
+        const detail = data.detail;
+        const msg = typeof detail === 'object' && detail !== null
+          ? (detail.detail || 'Check‑in failed')
+          : (detail || 'Check‑in failed');
+        throw new Error(msg);
+      }
       setActionMsg('Checked in successfully');
       await fetchMyApps();
     } catch (e) {
@@ -237,6 +334,8 @@ const RequirementDetails = () => {
     description,
     category,
     event_date,
+    event_start_time,
+    event_end_time,
     location_name,
     seats_filled,
     seats_total,
@@ -246,6 +345,18 @@ const RequirementDetails = () => {
 
   const isApplied = !!appliedInfo;
   const attendanceStatus = appliedInfo?.attendance_status || 'none';
+
+  // Compute display-only check-in window status (backend is authoritative)
+  const windowStatus = getCheckinWindowStatus(event_date, event_start_time, event_end_time);
+  const startDisplay = formatTime(event_start_time);
+  const endDisplay   = formatTime(event_end_time);
+  const eventDateDisplay = event_date
+    ? new Date(event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '';
+
+  // Display-only restrictions — backend enforces authoritatively
+  const withdrawalBlocked = isWithin48Hours(event_date, event_start_time);
+  const checkoutBlocked   = isBeforeEventStart(event_date, event_start_time);
 
   return (
     <div className="min-h-screen bg-brand-secondary">
@@ -266,6 +377,11 @@ const RequirementDetails = () => {
         <p className="text-gray-700 mb-2"><strong>Organization:</strong> {organization_name}</p>
         <p className="text-gray-700 mb-2"><strong>Category:</strong> {category}</p>
         <p className="text-gray-700 mb-2"><strong>Event Date:</strong> {new Date(event_date).toLocaleDateString()}</p>
+        {startDisplay && endDisplay && (
+          <p className="text-gray-700 mb-2">
+            <strong>Event Time:</strong> {startDisplay} – {endDisplay} IST
+          </p>
+        )}
         <p className="text-gray-700 mb-2">
           <strong>Location:</strong>{' '}
           {(() => {
@@ -292,13 +408,21 @@ const RequirementDetails = () => {
             <div className="flex flex-col space-y-2">
               <div>{statusBadge(appliedInfo.status)}</div>
               {(appliedInfo.status === 'pending' || appliedInfo.status === 'accepted') && (appliedInfo.attendance_status !== 'checked_in' && appliedInfo.attendance_status !== 'verified') && (
-                <button
-                  onClick={() => handleWithdraw(appliedInfo.appId)}
-                  disabled={actionLoading}
-                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
-                >
-                  {actionLoading ? 'Withdrawing…' : 'Withdraw'}
-                </button>
+                <>
+                  {withdrawalBlocked ? (
+                    <p className="text-xs text-gray-500 italic">
+                      Withdrawal is unavailable within 48 hours of the event.
+                    </p>
+                  ) : (
+                    <button
+                      onClick={() => handleWithdraw(appliedInfo.appId)}
+                      disabled={actionLoading}
+                      className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
+                    >
+                      {actionLoading ? 'Withdrawing…' : 'Withdraw'}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           ) : (
@@ -315,22 +439,61 @@ const RequirementDetails = () => {
           {isApplied && appliedInfo.status === 'accepted' && (
             <div className="flex flex-col space-y-2">
               {attendanceStatus === 'none' && (
-                <button
-                  onClick={handleCheckIn}
-                  disabled={actionLoading}
-                  className="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
-                >
-                  {actionLoading ? 'Checking In…' : 'Check In'}
-                </button>
+                <>
+                  {/* Check-in window status banner */}
+                  {event_start_time && event_end_time && (
+                    <div className={`px-3 py-2 rounded-md text-xs font-medium flex items-center space-x-2 border ${
+                      windowStatus === 'open'
+                        ? 'bg-green-50 border-green-200 text-green-700'
+                        : windowStatus === 'ended'
+                        ? 'bg-gray-100 border-gray-300 text-gray-500'
+                        : 'bg-amber-50 border-amber-200 text-amber-700'
+                    }`}>
+                      <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>
+                        {windowStatus === 'open' && (
+                          `Check-in is open. Available until ${endDisplay} IST.`
+                        )}
+                        {windowStatus === 'upcoming' && (
+                          `Check-in is not available yet. Opens at ${startDisplay} IST on ${eventDateDisplay}.`
+                        )}
+                        {windowStatus === 'ended' && (
+                          `The window was ${startDisplay} – ${endDisplay} IST on ${eventDateDisplay}.`
+                        )}
+                        {windowStatus === 'unknown' && (
+                          `Check-in available from ${startDisplay} to ${endDisplay} IST on ${eventDateDisplay}.`
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleCheckIn}
+                    disabled={actionLoading}
+                    className="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
+                  >
+                    {actionLoading ? 'Checking In…' : 'Check In'}
+                  </button>
+                </>
               )}
               {attendanceStatus === 'checked_in' && (
-                <button
-                  onClick={handleCheckOut}
-                  disabled={actionLoading}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
-                >
-                  {actionLoading ? 'Checking Out…' : 'Check Out'}
-                </button>
+                <>
+                  {checkoutBlocked ? (
+                    <div className="px-3 py-2 rounded-md text-xs font-medium flex items-center space-x-2 border bg-amber-50 border-amber-200 text-amber-700">
+                      <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>
+                        Check-out will be available when the event starts at {startDisplay} IST.
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleCheckOut}
+                      disabled={actionLoading}
+                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-md transition-all cursor-pointer"
+                    >
+                      {actionLoading ? 'Checking Out…' : 'Check Out'}
+                    </button>
+                  )}
+                </>
               )}
               {attendanceStatus === 'verified' && (
                 <div className="flex flex-col space-y-2">
