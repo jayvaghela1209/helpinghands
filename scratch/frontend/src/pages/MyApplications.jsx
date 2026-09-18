@@ -6,6 +6,45 @@ import { CheckCircle, AlertCircle, XCircle, Clock, Check, Star, ArrowLeft, Downl
 import { formatWorkedHours } from '../lib/format';
 import { getAccuratePosition } from '../lib/getAccuratePosition';
 
+// ── IST offset (UTC+5:30) — mirrors RequirementDetails.jsx convention ────────
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+const parseTime = (t) => {
+  if (!t) return null;
+  const parts = t.split(':');
+  return { hours: parseInt(parts[0], 10), minutes: parseInt(parts[1], 10) };
+};
+
+const formatTime = (t) => {
+  const p = parseTime(t);
+  if (!p) return '';
+  const d = new Date(0);
+  d.setHours(p.hours, p.minutes, 0, 0);
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+/** Returns true when fewer than 48 hours remain until event start (IST). */
+const isWithin48Hours = (eventDate, eventStartTime) => {
+  if (!eventDate || !eventStartTime) return false;
+  const [year, month, day] = eventDate.split('-').map(Number);
+  const startP = parseTime(eventStartTime);
+  const eventStartUTC = new Date(Date.UTC(year, month - 1, day, startP.hours, startP.minutes, 0));
+  const nowAsIST = new Date(Date.now() + IST_OFFSET_MS - new Date().getTimezoneOffset() * 60000);
+  const nowUTC = new Date(nowAsIST.toISOString().replace('Z', '+00:00'));
+  return (eventStartUTC - nowUTC) <= 48 * 60 * 60 * 1000;
+};
+
+/** Returns true when the event has not yet started (IST wall-clock). */
+const isBeforeEventStart = (eventDate, eventStartTime) => {
+  if (!eventDate || !eventStartTime) return false;
+  const [year, month, day] = eventDate.split('-').map(Number);
+  const startP = parseTime(eventStartTime);
+  const eventStartUTC = new Date(Date.UTC(year, month - 1, day, startP.hours, startP.minutes, 0));
+  const nowAsIST = new Date(Date.now() + IST_OFFSET_MS - new Date().getTimezoneOffset() * 60000);
+  const nowUTC = new Date(nowAsIST.toISOString().replace('Z', '+00:00'));
+  return nowUTC < eventStartUTC;
+};
+
 export const MyApplications = () => {
   const { user } = useAuth();
   const [applications, setApplications] = useState([]);
@@ -197,14 +236,25 @@ export const MyApplications = () => {
                           <Check className="w-3 h-3 mr-1" />Check‑In
                         </button>
                       )}
-                      {attStatus === 'checked_in' && (
-                        <button
-                          className="px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded hover:bg-green-700 flex items-center cursor-pointer"
-                          onClick={() => handleCheckOut(app.id)}
-                        >
-                          <Check className="w-3 h-3 mr-1" />Check‑Out
-                        </button>
-                      )}
+                      {attStatus === 'checked_in' && (() => {
+                        const eventDate = app.event_date ? String(app.event_date).split('T')[0] : null;
+                        const eventStartTime = app.event_start_time ? String(app.event_start_time) : null;
+                        const blocked = isBeforeEventStart(eventDate, eventStartTime);
+                        return blocked ? (
+                          <span className="px-3 py-1 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium rounded flex items-center">
+                            <Clock className="w-3 h-3 mr-1 flex-shrink-0" />
+                            Check-out available after event starts
+                            {eventStartTime ? ` at ${formatTime(eventStartTime)} IST` : ''}
+                          </span>
+                        ) : (
+                          <button
+                            className="px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded hover:bg-green-700 flex items-center cursor-pointer"
+                            onClick={() => handleCheckOut(app.id)}
+                          >
+                            <Check className="w-3 h-3 mr-1" />Check‑Out
+                          </button>
+                        );
+                      })()}
                       {attStatus === 'verified' && (
                         <>
                           <button

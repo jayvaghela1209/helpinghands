@@ -136,6 +136,23 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
             try:
                 response = await client.post(url, headers=headers, json=body, timeout=10.0)
                 if response.status_code not in (200, 201):
+                    resp_text = response.text.lower()
+                    # Supabase returns 422 or 400 with "already registered" or
+                    # "user already exists" for duplicate emails
+                    if (
+                        response.status_code in (400, 422)
+                        and any(phrase in resp_text for phrase in (
+                            "already registered",
+                            "already exists",
+                            "email address is already",
+                            "duplicate",
+                            "user already",
+                        ))
+                    ):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Email ID is already taken."
+                        )
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Supabase auth registration failed: {response.text}"
@@ -216,12 +233,24 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
                 })
                 
     except Exception as db_err:
-        # Note: If email / user already exists in DB, it will raise an error here.
-        # Ideally, we would delete the Supabase user here, but since this is local setup,
-        # we raise a clear HTTP error.
+        # Map duplicate-email constraint violations to a clean user-facing message.
+        # PostgreSQL raises error code 23505 (unique_violation) for duplicate keys.
+        # The constraint name and error message both reference the email column.
+        err_str = str(db_err).lower()
+        if (
+            "unique" in err_str and "email" in err_str
+        ) or (
+            "23505" in err_str
+        ) or (
+            "duplicate key" in err_str and "email" in err_str
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email ID is already taken."
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Database profile creation failed: {str(db_err)}"
+            detail="Registration failed. Please check your details and try again."
         )
 
     # Fetch the newly created user and also issue a JWT so the frontend can

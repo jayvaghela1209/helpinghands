@@ -5,7 +5,7 @@ from sqlalchemy import text
 from pydantic import BaseModel, Field
 from typing import Optional
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import math
 import logging
 
@@ -16,6 +16,9 @@ from app.schemas.auth import UserRole
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Attendance"])
+
+# IST is UTC+5:30 — used consistently for all event date/time comparisons.
+IST = timezone(timedelta(hours=5, minutes=30))
 
 class CheckinRequest(BaseModel):
     latitude: float
@@ -58,8 +61,12 @@ async def checkin(
             detail="You must be an accepted volunteer to check in to this event"
         )
 
-    # Fetch requirement location and per-requirement attendance radius
-    req_query = text("SELECT event_latitude, event_longitude, attendance_radius, title FROM requirements WHERE id = :id")
+    # Fetch requirement location, attendance radius, and event time window
+    req_query = text("""
+        SELECT event_date, event_start_time, event_end_time,
+               event_latitude, event_longitude, attendance_radius, title
+        FROM requirements WHERE id = :id
+    """)
     req_res = await db.execute(req_query, {"id": id})
     req = req_res.mappings().first()
 
@@ -68,6 +75,50 @@ async def checkin(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This event does not have valid coordinates for geo-verification"
         )
+
+    # ── Event time-window enforcement (IST, server-authoritative) ──────────
+    # Combine event_date (DATE) and event_start_time / event_end_time (TIME)
+    # into timezone-aware datetimes in IST, then compare against now (IST).
+    now_ist = datetime.now(IST)
+
+    event_date = req["event_date"]               # Python date object from DB
+    start_time = req["event_start_time"]         # Python time object from DB
+    end_time   = req["event_end_time"]           # Python time object from DB
+
+    # Build aware datetimes for the window boundaries in IST
+    window_start = datetime.combine(event_date, start_time).replace(tzinfo=IST)
+    window_end   = datetime.combine(event_date, end_time).replace(tzinfo=IST)
+
+    if now_ist < window_start:
+        # Determine whether the event date is in the future or just the time
+        if now_ist.date() < event_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Check-in is not available for this event yet. "
+                    f"The event is on {event_date.strftime('%d %B %Y')} "
+                    f"from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')} IST."
+                )
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Check-in is not available yet. "
+                    f"Check-in opens at {start_time.strftime('%I:%M %p')} IST."
+                )
+            )
+
+    if now_ist >= window_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Check-in for this event has ended. "
+                f"The check-in window was {start_time.strftime('%I:%M %p')} – "
+                f"{end_time.strftime('%I:%M %p')} IST on {event_date.strftime('%d %B %Y')}."
+            )
+        )
+    # ── End time-window check ───────────────────────────────────────────────
 
     # Guard against the sentinel (0.0, 0.0) stored when the requirement was created
     # with a location name only (no GPS coordinates).  0.0/0.0 is the Gulf of Guinea —

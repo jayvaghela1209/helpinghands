@@ -56,21 +56,16 @@ const SectionHeader = ({ icon: Icon, title, count, color = 'text-brand-primary' 
 );
 
 // ─────────────────────────────────────────────
-// Action modal for Flag / Suspend (reuses the same reason pattern as Reject)
+// Action modal for Suspend (reuses the same reason pattern as Reject)
 // ─────────────────────────────────────────────
 
 const ActionModal = ({ entity, action, onConfirm, onCancel }) => {
   const [reason, setReason] = useState('');
-  const isDestructive = action === 'suspend';
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-white rounded-md border border-brand-border w-full max-w-md shadow-xl">
         <div className="px-5 py-4 border-b border-brand-border flex items-center space-x-2">
-          {isDestructive ? (
-            <ShieldX className="w-4 h-4 text-brand-error" />
-          ) : (
-            <ShieldAlert className="w-4 h-4 text-amber-600" />
-          )}
+          <ShieldX className="w-4 h-4 text-brand-error" />
           <span className="text-sm font-bold text-brand-dark capitalize">{action} Entity</span>
         </div>
         <div className="p-5 space-y-4">
@@ -92,9 +87,7 @@ const ActionModal = ({ entity, action, onConfirm, onCancel }) => {
           </button>
           <button
             onClick={() => onConfirm(reason)}
-            className={`px-4 py-1.5 text-xs font-bold text-white rounded-md transition-all cursor-pointer ${
-              isDestructive ? 'bg-brand-error border border-brand-error hover:bg-opacity-90' : 'bg-amber-600 border border-amber-600 hover:bg-amber-700'
-            }`}
+            className="px-4 py-1.5 text-xs font-bold text-white rounded-md transition-all cursor-pointer bg-brand-error border border-brand-error hover:bg-opacity-90"
           >
             Confirm {action.charAt(0).toUpperCase() + action.slice(1)}
           </button>
@@ -115,7 +108,7 @@ const DetailRow = ({ label, value }) => (
   </div>
 );
 
-const EntityDetailPanel = ({ entity, entityType, onApprove, onReject, onFlag, onSuspend, actionLoading }) => (
+const EntityDetailPanel = ({ entity, entityType, onApprove, onReject, onSuspend, actionLoading }) => (
   <div className="mt-3 bg-brand-secondary border border-brand-border rounded-md p-4 space-y-4 text-xs">
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
       <DetailRow label="Display Name" value={entity.display_name} />
@@ -150,9 +143,12 @@ const EntityDetailPanel = ({ entity, entityType, onApprove, onReject, onFlag, on
 
     {/* Actions depend on current verification status */}
     <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-brand-border">
-      {/* Pending: Approve + Reject */}
-      {entity.verification_status === 'pending' && (
+      {/* Pending or Suspended: Approve + Reject */}
+      {(entity.verification_status === 'pending' || entity.verification_status === 'suspended') && (
         <>
+          {entity.verification_status === 'suspended' && (
+            <span className="text-[10px] font-semibold text-gray-500 mr-1">Re-verify:</span>
+          )}
           <button onClick={() => onApprove(entity.id, entityType)} disabled={actionLoading}
             className="flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold bg-green-600 text-white border border-green-600 rounded-md hover:bg-green-700 transition-all disabled:opacity-50 cursor-pointer">
             <CheckCircle2 className="w-3.5 h-3.5" /><span>Approve</span>
@@ -164,25 +160,11 @@ const EntityDetailPanel = ({ entity, entityType, onApprove, onReject, onFlag, on
         </>
       )}
 
-      {/* Approved: Flag + Suspend */}
+      {/* Approved: Suspend only */}
       {entity.verification_status === 'approved' && (
-        <>
-          <button onClick={() => onFlag(entity)} disabled={actionLoading}
-            className="flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold bg-amber-50 text-amber-700 border border-amber-400 rounded-md hover:bg-amber-100 transition-all disabled:opacity-50 cursor-pointer">
-            <ShieldAlert className="w-3.5 h-3.5" /><span>Flag</span>
-          </button>
-          <button onClick={() => onSuspend(entity)} disabled={actionLoading}
-            className="flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold bg-white text-brand-error border border-brand-error rounded-md hover:bg-red-50 transition-all disabled:opacity-50 cursor-pointer">
-            <ShieldX className="w-3.5 h-3.5" /><span>Suspend</span>
-          </button>
-        </>
-      )}
-
-      {/* Flagged / Suspended: allow re-approval */}
-      {(entity.verification_status === 'flagged' || entity.verification_status === 'suspended') && (
-        <button onClick={() => onApprove(entity.id, entityType)} disabled={actionLoading}
-          className="flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold bg-green-600 text-white border border-green-600 rounded-md hover:bg-green-700 transition-all disabled:opacity-50 cursor-pointer">
-          <CheckCircle2 className="w-3.5 h-3.5" /><span>Re-Approve</span>
+        <button onClick={() => onSuspend(entity)} disabled={actionLoading}
+          className="flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold bg-white text-brand-error border border-brand-error rounded-md hover:bg-red-50 transition-all disabled:opacity-50 cursor-pointer">
+          <ShieldX className="w-3.5 h-3.5" /><span>Suspend</span>
         </button>
       )}
     </div>
@@ -193,7 +175,7 @@ const EntityDetailPanel = ({ entity, entityType, onApprove, onReject, onFlag, on
 // Entity row (collapsible)
 // ─────────────────────────────────────────────
 
-const EntityRow = ({ entity, entityType, onApprove, onReject, onFlag, onSuspend, actionLoading }) => {
+const EntityRow = ({ entity, entityType, onApprove, onReject, onSuspend, actionLoading }) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -237,7 +219,6 @@ const EntityRow = ({ entity, entityType, onApprove, onReject, onFlag, onSuspend,
             entityType={entityType}
             onApprove={onApprove}
             onReject={onReject}
-            onFlag={onFlag}
             onSuspend={onSuspend}
             actionLoading={actionLoading}
           />
@@ -401,7 +382,7 @@ const PlatformOperatorDashboard = () => {
   const allCorps = data?.corporates || [];
   const volunteers = data?.volunteers || [];
 
-  const pendingNgos = allNgos.filter(n => n.verification_status === 'pending');
+  const pendingNgos = allNgos.filter(n => n.verification_status === 'pending' || n.verification_status === 'suspended');
   const approvedNgos = allNgos.filter(n => n.verification_status === 'approved');
   const rejectedNgos = allNgos.filter(n => n.verification_status === 'rejected');
 
@@ -596,7 +577,6 @@ const PlatformOperatorDashboard = () => {
                     entityType="ngo"
                     onApprove={handleApprove}
                     onReject={openRejectModal}
-                    onFlag={(ent) => openActionModal(ent, 'flag')}
                     onSuspend={(ent) => openActionModal(ent, 'suspend')}
                     actionLoading={actionLoading}
                   />
@@ -622,7 +602,6 @@ const PlatformOperatorDashboard = () => {
                     entityType="corporate"
                     onApprove={handleApprove}
                     onReject={openRejectModal}
-                    onFlag={(ent) => openActionModal(ent, 'flag')}
                     onSuspend={(ent) => openActionModal(ent, 'suspend')}
                     actionLoading={actionLoading}
                   />
@@ -641,7 +620,7 @@ const PlatformOperatorDashboard = () => {
                 <div className="p-8 text-center text-xs text-gray-400">No approved NGOs yet.</div>
               ) : (
                 approvedNgos.map(e => (
-                  <EntityRow key={e.id} entity={e} entityType="ngo" onApprove={handleApprove} onReject={openRejectModal} onFlag={(ent) => openActionModal(ent, 'flag')} onSuspend={(ent) => openActionModal(ent, 'suspend')} actionLoading={actionLoading} />
+                  <EntityRow key={e.id} entity={e} entityType="ngo" onApprove={handleApprove} onReject={openRejectModal} onSuspend={(ent) => openActionModal(ent, 'suspend')} actionLoading={actionLoading} />
                 ))
               )}
             </div>
@@ -651,7 +630,7 @@ const PlatformOperatorDashboard = () => {
                 <div className="p-8 text-center text-xs text-gray-400">No approved corporates yet.</div>
               ) : (
                 approvedCorps.map(e => (
-                  <EntityRow key={e.id} entity={e} entityType="corporate" onApprove={handleApprove} onReject={openRejectModal} onFlag={(ent) => openActionModal(ent, 'flag')} onSuspend={(ent) => openActionModal(ent, 'suspend')} actionLoading={actionLoading} />
+                  <EntityRow key={e.id} entity={e} entityType="corporate" onApprove={handleApprove} onReject={openRejectModal} onSuspend={(ent) => openActionModal(ent, 'suspend')} actionLoading={actionLoading} />
                 ))
               )}
             </div>
@@ -667,7 +646,7 @@ const PlatformOperatorDashboard = () => {
                 <div className="p-8 text-center text-xs text-gray-400">No rejected NGOs.</div>
               ) : (
                 rejectedNgos.map(e => (
-                  <EntityRow key={e.id} entity={e} entityType="ngo" onApprove={handleApprove} onReject={openRejectModal} onFlag={(ent) => openActionModal(ent, 'flag')} onSuspend={(ent) => openActionModal(ent, 'suspend')} actionLoading={actionLoading} />
+                  <EntityRow key={e.id} entity={e} entityType="ngo" onApprove={handleApprove} onReject={openRejectModal} onSuspend={(ent) => openActionModal(ent, 'suspend')} actionLoading={actionLoading} />
                 ))
               )}
             </div>
@@ -677,7 +656,7 @@ const PlatformOperatorDashboard = () => {
                 <div className="p-8 text-center text-xs text-gray-400">No rejected corporates.</div>
               ) : (
                 rejectedCorps.map(e => (
-                  <EntityRow key={e.id} entity={e} entityType="corporate" onApprove={handleApprove} onReject={openRejectModal} onFlag={(ent) => openActionModal(ent, 'flag')} onSuspend={(ent) => openActionModal(ent, 'suspend')} actionLoading={actionLoading} />
+                  <EntityRow key={e.id} entity={e} entityType="corporate" onApprove={handleApprove} onReject={openRejectModal} onSuspend={(ent) => openActionModal(ent, 'suspend')} actionLoading={actionLoading} />
                 ))
               )}
             </div>

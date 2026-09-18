@@ -18,6 +18,8 @@ export const PostRequirement = () => {
   const [skillTags, setSkillTags] = useState('');
   const [seatsTotal, setSeatsTotal] = useState(10);
   const [eventDate, setEventDate] = useState('');
+  const [eventStartTime, setEventStartTime] = useState('');
+  const [eventEndTime, setEventEndTime] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
 
   // ── Unified location state ──────────────────────────────────────────────────
@@ -145,6 +147,16 @@ export const PostRequirement = () => {
       return;
     }
 
+    if (!eventStartTime || !eventEndTime) {
+      setErrorMsg('Please enter both event start time and event end time.');
+      return;
+    }
+
+    if (eventEndTime <= eventStartTime) {
+      setErrorMsg('Event end time must be after event start time.');
+      return;
+    }
+
     setLoading(true);
 
     const payload = {
@@ -156,6 +168,8 @@ export const PostRequirement = () => {
         : [],
       seats_total: parseInt(seatsTotal, 10),
       event_date: eventDate,
+      event_start_time: eventStartTime,
+      event_end_time: eventEndTime,
       location_name: location.name,
       event_latitude: parseFloat(location.lat),
       event_longitude: parseFloat(location.lon),
@@ -313,6 +327,36 @@ export const PostRequirement = () => {
                   placeholder="e.g. tutoring, communication, patient"
                   className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
                 />
+              </div>
+            </div>
+
+            {/* Event Start Time + End Time */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Event Start Time
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={eventStartTime}
+                  onChange={(e) => setEventStartTime(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">Check-in opens at this time.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Event End Time
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={eventEndTime}
+                  onChange={(e) => setEventEndTime(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-brand-border rounded-md text-sm text-brand-dark outline-none focus:ring-1 focus:ring-brand-primary"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">Check-in closes at this time.</p>
               </div>
             </div>
 

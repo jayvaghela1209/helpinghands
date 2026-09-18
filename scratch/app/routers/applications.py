@@ -4,9 +4,12 @@ from sqlalchemy import text
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import io
 import uuid
+
+# IST is UTC+5:30 — consistent with attendance.py timezone convention
+IST = timezone(timedelta(hours=5, minutes=30))
 
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfgen import canvas
@@ -168,7 +171,8 @@ async def list_my_applications(
 ):
     query = text("""
         SELECT a.id, a.status, a.applied_at, a.decided_at,
-               r.id as requirement_id, r.title, r.category, r.event_date, r.location_name,
+               r.id as requirement_id, r.title, r.category, r.event_date,
+               r.event_start_time, r.location_name,
                COALESCE(at.status, 'none') as attendance_status,
                at.worked_hours as worked_hours,
                EXISTS (SELECT 1 FROM ngo_reviews nr WHERE nr.volunteer_profile_id = vp.id AND nr.requirement_id = r.id) as has_review,
@@ -189,26 +193,43 @@ async def withdraw_application(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_role([UserRole.volunteer]))
 ):
-    # Verify application belongs to volunteer
+    # Verify application belongs to volunteer and fetch requirement info
     app_query = text("""
-        SELECT a.id, a.volunteer_profile_id, a.status, a.applied_at,
-               a.requirement_id
+        SELECT a.id, a.volunteer_profile_id, a.status,
+               a.requirement_id,
+               r.event_date, r.event_start_time
         FROM applications a
         JOIN volunteer_profiles vp ON a.volunteer_profile_id = vp.id
+        JOIN requirements r ON a.requirement_id = r.id
         WHERE a.id = :id AND vp.user_id = :user_id
     """)
     app_res = await db.execute(app_query, {"id": id, "user_id": current_user["id"]})
     app = app_res.mappings().first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
-    # Enforce 48-hour rule
-    now = datetime.now(timezone.utc)
-    applied_at = app["applied_at"]
-    if not applied_at:
-        raise HTTPException(status_code=400, detail="Application timestamp missing")
-    elapsed = now - applied_at
-    if elapsed.total_seconds() > 48 * 3600:
-        raise HTTPException(status_code=400, detail="Withdrawal window has expired")
+
+    # ── 48-hour rule using event_date + event_start_time in IST ──────────────
+    event_date = app["event_date"]          # Python date from DB
+    event_start_time = app["event_start_time"]  # Python time from DB
+
+    if event_date is None or event_start_time is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Event date or start time is missing — cannot validate withdrawal window."
+        )
+
+    # Build event start as an IST-aware datetime
+    event_start_ist = datetime.combine(event_date, event_start_time).replace(tzinfo=IST)
+    now_ist = datetime.now(IST)
+    time_until_event = event_start_ist - now_ist
+
+    if time_until_event.total_seconds() <= 48 * 3600:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application withdrawal is not allowed within 48 hours of the event."
+        )
+    # ── End 48-hour check ────────────────────────────────────────────────────
+
     # Prevent withdrawal after check-in or verification
     attend_check = text("""
         SELECT status FROM attendance
@@ -232,10 +253,12 @@ async def withdraw_application(
             WHERE id = :req_id
         """)
         await db.execute(dec_req, {"req_id": app["requirement_id"]})
+
     # Update status to withdrawn
+    now_utc = datetime.now(timezone.utc)
     await db.execute(
         text("UPDATE applications SET status = 'withdrawn', decided_at = :now WHERE id = :id"),
-        {"now": now, "id": id}
+        {"now": now_utc, "id": id}
     )
     await db.commit()
     return {"status": "withdrawn", "application_id": id}
@@ -570,12 +593,33 @@ async def checkout_application(
     if not attendance:
         raise HTTPException(status_code=400, detail="No active check‑in found for this application")
 
-    # Load requirement location & radius (same as check‑in)
-    req_query = text("SELECT event_latitude, event_longitude, attendance_radius FROM requirements WHERE id = :req_id")
+    # Load requirement location & radius and event time window
+    req_query = text("""
+        SELECT event_latitude, event_longitude, attendance_radius,
+               event_date, event_start_time
+        FROM requirements WHERE id = :req_id
+    """)
     req_res = await db.execute(req_query, {"req_id": app["requirement_id"]})
     req = req_res.mappings().first()
     if not req:
         raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # ── Block checkout before event start (IST) ──────────────────────────────
+    event_date = req["event_date"]
+    event_start_time = req["event_start_time"]
+    if event_date is not None and event_start_time is not None:
+        event_start_ist = datetime.combine(event_date, event_start_time).replace(tzinfo=IST)
+        now_ist = datetime.now(IST)
+        if now_ist < event_start_ist:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Check-out is available only after the event has started. "
+                    f"The event starts at {event_start_time.strftime('%I:%M %p')} IST "
+                    f"on {event_date.strftime('%d %B %Y')}."
+                )
+            )
+    # ── End checkout time check ───────────────────────────────────────────────
 
     # Haversine distance calculation
     from math import radians, sin, cos, sqrt, atan2

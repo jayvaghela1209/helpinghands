@@ -162,6 +162,8 @@ CREATE TABLE IF NOT EXISTS requirements (
     seats_filled        INTEGER NOT NULL DEFAULT 0
                             CHECK (seats_filled >= 0 AND seats_filled <= seats_total),
     event_date          DATE NOT NULL,
+    event_start_time    TIME NOT NULL,
+    event_end_time      TIME NOT NULL,
     location_name       VARCHAR(255) NOT NULL,
     event_latitude      NUMERIC(10,7) NOT NULL,
     event_longitude     NUMERIC(10,7) NOT NULL,
@@ -512,4 +514,24 @@ CREATE INDEX idx_csr_status             ON csr_pledges(status);
 
 -- ============================================================
 -- END OF SCHEMA
+-- ============================================================
+
+-- ============================================================
+-- MIGRATION — Add event time window to requirements
+-- Run this against any existing database that was created
+-- from a prior version of this schema (before event_start_time
+-- and event_end_time were added).
+-- ============================================================
+
+ALTER TABLE requirements
+    ADD COLUMN IF NOT EXISTS event_start_time TIME NOT NULL DEFAULT '00:00:00',
+    ADD COLUMN IF NOT EXISTS event_end_time   TIME NOT NULL DEFAULT '23:59:59';
+
+-- After running the migration, remove the defaults if desired:
+-- ALTER TABLE requirements
+--     ALTER COLUMN event_start_time DROP DEFAULT,
+--     ALTER COLUMN event_end_time   DROP DEFAULT;
+
+-- ============================================================
+-- END OF MIGRATION
 -- ============================================================

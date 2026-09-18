@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional
-from datetime import date
+from datetime import date, time
 from uuid import UUID
 
 from app.db import get_db
@@ -21,6 +21,8 @@ class RequirementCreate(BaseModel):
     skill_tags: List[str] = []
     seats_total: int = Field(..., gt=0)
     event_date: date
+    event_start_time: time
+    event_end_time: time
     # All three location fields are required together — the frontend always
     # sends name + lat + lon as one confirmed, reverse-geocoded unit.
     location_name: str = Field(..., min_length=1, max_length=255)
@@ -43,6 +45,12 @@ class RequirementCreate(BaseModel):
             raise ValueError('Location name cannot be blank.')
         return v.strip()
 
+    @model_validator(mode='after')
+    def validate_time_window(self):
+        if self.event_end_time <= self.event_start_time:
+            raise ValueError('Event end time must be after event start time.')
+        return self
+
 class RequirementUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = None
@@ -50,6 +58,8 @@ class RequirementUpdate(BaseModel):
     skill_tags: Optional[List[str]] = None
     seats_total: Optional[int] = Field(None, gt=0)
     event_date: Optional[date] = None
+    event_start_time: Optional[time] = None
+    event_end_time: Optional[time] = None
     location_name: Optional[str] = Field(None, min_length=1, max_length=255)
     event_latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
     event_longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
@@ -62,6 +72,13 @@ class RequirementUpdate(BaseModel):
         if v is not None and not v.strip():
             raise ValueError('Location name cannot be blank.')
         return v.strip() if v else v
+
+    @model_validator(mode='after')
+    def validate_time_window(self):
+        if self.event_start_time is not None and self.event_end_time is not None:
+            if self.event_end_time <= self.event_start_time:
+                raise ValueError('Event end time must be after event start time.')
+        return self
 
     def validate_location_completeness(self) -> None:
         """
@@ -123,9 +140,9 @@ async def create_requirement(
     # Location fields are all required and bounds-validated by the Pydantic schema.
     try:
         query = text("""
-            INSERT INTO requirements (ngo_profile_id, title, description, category, skill_tags, seats_total, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status)
-            VALUES ((SELECT id FROM ngo_profiles WHERE user_id = :ngo_user_id), :title, :description, :category, :skill_tags, :seats_total, :event_date, :location_name, :event_latitude, :event_longitude, :attendance_radius, :is_urgent, 'open')
-            RETURNING id, ngo_profile_id, title, description, category, skill_tags, seats_total, seats_filled, event_date, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status, created_at
+            INSERT INTO requirements (ngo_profile_id, title, description, category, skill_tags, seats_total, event_date, event_start_time, event_end_time, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status)
+            VALUES ((SELECT id FROM ngo_profiles WHERE user_id = :ngo_user_id), :title, :description, :category, :skill_tags, :seats_total, :event_date, :event_start_time, :event_end_time, :location_name, :event_latitude, :event_longitude, :attendance_radius, :is_urgent, 'open')
+            RETURNING id, ngo_profile_id, title, description, category, skill_tags, seats_total, seats_filled, event_date, event_start_time, event_end_time, location_name, event_latitude, event_longitude, attendance_radius, is_urgent, status, created_at
         """)
 
         result = await db.execute(query, {
@@ -136,6 +153,8 @@ async def create_requirement(
             "skill_tags": request.skill_tags,
             "seats_total": request.seats_total,
             "event_date": request.event_date,
+            "event_start_time": request.event_start_time,
+            "event_end_time": request.event_end_time,
             "location_name": request.location_name,
             "event_latitude": request.event_latitude,
             "event_longitude": request.event_longitude,
@@ -325,6 +344,12 @@ async def edit_requirement(
     if request.event_date is not None:
         fields_to_update.append("event_date = :event_date")
         params["event_date"] = request.event_date
+    if request.event_start_time is not None:
+        fields_to_update.append("event_start_time = :event_start_time")
+        params["event_start_time"] = request.event_start_time
+    if request.event_end_time is not None:
+        fields_to_update.append("event_end_time = :event_end_time")
+        params["event_end_time"] = request.event_end_time
     if request.location_name is not None:
         fields_to_update.append("location_name = :location_name")
         params["location_name"] = request.location_name
